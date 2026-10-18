@@ -245,3 +245,29 @@ def test_real_worker_thread_applies_latest_state_in_order():  # M8
     pool.shutdown(wait=True)
     assert z.muted is True and e.status().muted is True
     assert log[-1].endswith("음소거 성공")
+
+
+def test_mute_failure_warning_overrides_calibration_warning():  # 재검토 I1
+    z = FakeZoom(muted=True); e = make_engine(z)
+    e.start_calibration("wide", 0.0); feed_stats(e, FaceStats(0, 0.0), 0.0, 2.2)
+    assert e.status().warning == "보정 실패: 얼굴이 검출되지 않았습니다"
+    zoom_for(e, 1.2, t0=3.0); z.stuck = True
+    wide_for(e, 1.8, t0=4.4)
+    assert e.status().warning == "음소거 실패"
+
+
+def test_calibration_warning_does_not_hide_error():  # 재검토 I1
+    z = FakeZoom(muted=True); e = make_engine(z)
+    e.on_error(RuntimeError("x"))
+    e.start_calibration("wide", 0.0); feed_stats(e, FaceStats(0, 0.0), 0.0, 2.2)
+    assert e.status().warning == "오류 발생"
+
+
+def test_stale_sync_answer_is_ignored():  # 재검토 I2
+    z = FakeZoom(muted=False, readable=False); e = make_engine(z)
+    e.mic.sync_estimate(False)                 # 추정: 해제(실제와 일치)
+    token = e.sync_token()                     # 진행자가 대화상자를 엶
+    e.tick()                                   # 그 사이 자동 음소거(Alt+A)
+    assert z.muted is True
+    assert e.sync_mic(False, token) is False   # 낡은 답은 반영하지 않음
+    assert z.muted is True

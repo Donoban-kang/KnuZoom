@@ -78,3 +78,13 @@ def test_sync_estimate_waits_for_running_apply():  # M7
     assert not done.wait(0.2)          # apply가 끝날 때까지 기다려야 함
     release.set(); t.join(2)
     assert done.wait(2) and c.estimated_muted is True
+
+
+def test_sync_with_stale_token_is_rejected():  # 재검토 I2
+    z = FakeZoom(muted=False, readable=False); c = MicController(z, 1.0, sleep=nosleep)
+    c.sync_estimate(False)
+    token = c.press_count
+    c.apply(True)                               # 누름 발생
+    assert c.sync_estimate(False, since=token) is False
+    assert c.estimated_muted is True
+    assert c.sync_estimate(False, since=c.press_count) is True

@@ -27,6 +27,9 @@ class VCam(Protocol):
 
 def open_real_capture(s: Settings) -> Capture:
     cap = cv2.VideoCapture(s.camera_index, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap.release()
+        raise OSError(f"카메라 {s.camera_index}번을 열 수 없습니다")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, s.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, s.height)
     cap.set(cv2.CAP_PROP_FPS, s.fps)

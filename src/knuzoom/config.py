@@ -39,15 +39,20 @@ def default_settings_path() -> Path:
 
 
 def load_settings(path: Path) -> Settings:
-    """파일이 없거나 깨졌으면 기본값. 모르는 키는 무시하고 없는 키는 기본값."""
+    """파일이 없거나 깨졌으면 기본값. 모르는 키는 무시하고 없는 키·잘못된 값은 기본값."""
+    return load_settings_with_problems(path)[0]
+
+
+def load_settings_with_problems(path: Path) -> tuple[Settings, list[str]]:
+    """load_settings와 같고, 기본값으로 되돌린 항목 이름도 함께 돌려준다(로그용)."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return Settings()
+        return Settings(), []
     if not isinstance(data, dict):
-        return Settings()
+        return Settings(), []
     known = {f.name for f in fields(Settings)}
-    return sanitize_settings(Settings(**{k: v for k, v in data.items() if k in known}))[0]
+    return sanitize_settings(Settings(**{k: v for k, v in data.items() if k in known}))
 
 
 # 숫자 항목의 허용 범위: (최소, 최대, 최소값 포함 여부)
@@ -80,6 +85,8 @@ def _valid(name: str, value: object, default: object) -> bool:
         return False
     if isinstance(default, int) and not isinstance(value, int):
         return False
+    if name not in _RANGES:
+        return True  # 범위가 정해지지 않은 숫자 항목은 형식만 확인
     lo, hi, lo_inclusive = _RANGES[name]
     return (value >= lo if lo_inclusive else value > lo) and value <= hi
 
@@ -94,9 +101,12 @@ def sanitize_settings(s: Settings) -> tuple[Settings, list[str]]:
         if not _valid(f.name, values[f.name], default):
             values[f.name] = default
             problems.append(f.name)
+        elif isinstance(default, float):
+            values[f.name] = float(values[f.name])  # JSON의 2 같은 정수를 실수로 맞춘다
     if values["wide_h"] >= values["zoom_h"]:
         values["wide_h"], values["zoom_h"] = defaults.wide_h, defaults.zoom_h
-        problems.append("wide_h")
+        if "wide_h" not in problems:
+            problems.append("wide_h")
     return Settings(**values), problems
 
 

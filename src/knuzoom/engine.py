@@ -23,6 +23,7 @@ W_CALIBRATION = "보정 실패: 확대 장면이 넓은 장면보다 커야 합�
 W_CALIB_NO_FACE = "보정 실패: 얼굴이 검출되지 않았습니다"
 W_CALIB_SMALL_GAP = "보정 실패: 넓은 장면과 확대 장면의 차이가 너무 작습니다"
 _CALIB_WARNINGS = {W_CALIBRATION, W_CALIB_NO_FACE, W_CALIB_SMALL_GAP}
+_URGENT_MIC_WARNINGS = {W_MUTE_FAILED, W_BLOCKED}
 W_EMERGENCY_HOLD = "긴급 정지 후 대기: 넓은 장면을 거쳐 다시 확대되면 자동 해제"
 _MIC_WARNINGS = {W_WAITING, W_BLOCKED, W_MUTE_FAILED, W_ESTIMATED}
 
@@ -136,8 +137,15 @@ class Engine:
             self.log(f"{self.clock_hms()} {log_prefix} {_result_text(want_muted, r)}")
 
     def _set_mic_warning(self, w: str | None) -> None:
-        # 카메라·오류·보정 경고는 마이크 결과로 덮어쓰지 않는다.
-        if self._warning is None or self._warning in _MIC_WARNINGS:
+        # 카메라·오류·긴급정지 대기 경고는 마이크 결과로 덮어쓰지 않는다.
+        # 보정 경고보다는 음소거 실패·해제 차단이 더 중요하므로 그 둘은 보정 경고를 덮어쓴다.
+        cur = self._warning
+        if cur is None or cur in _MIC_WARNINGS or (cur in _CALIB_WARNINGS and w in _URGENT_MIC_WARNINGS):
+            self._warning = w
+
+    def _set_calib_warning(self, w: str) -> None:
+        # 보정 경고는 가장 낮은 우선순위: 비어 있거나 다른 보정 경고일 때만 표시한다.
+        if self._warning is None or self._warning in _CALIB_WARNINGS:
             self._warning = w
 
     def _check_presence(self) -> None:
@@ -229,11 +237,21 @@ class Engine:
             self._muted = True
             self._request(True, f"{prev.value}→긴급정지")
 
-    def sync_mic(self, muted: bool) -> None:
-        """[상태 맞추기]: 진행자가 알려준 실제 상태로 추정을 고치고, 원하는 상태로 다시 맞춘다."""
-        self.mic.sync_estimate(muted)  # 진행 중인 제어가 끝날 때까지 기다릴 수 있으므로 엔진 잠금 밖에서
+    def sync_token(self) -> int:
+        """[상태 맞추기] 대화상자를 열 때 받아 두고, 답과 함께 sync_mic에 넘긴다."""
+        return self.mic.press_count
+
+    def sync_mic(self, muted: bool, token: int | None = None) -> bool:
+        """[상태 맞추기]: 진행자가 알려준 실제 상태로 추정을 고치고, 원하는 상태로 다시 맞춘다.
+
+        대화상자가 열린 뒤 KnuZoom이 Alt+A를 보냈다면 답이 낡았으므로 반영하지 않고 False를 돌려준다.
+        """
+        # 진행 중인 제어가 끝날 때까지 기다릴 수 있으므로 엔진 잠금 밖에서
+        if not self.mic.sync_estimate(muted, since=token):
+            return False
         with self._lock:
             self._request(self._muted, None)
+        return True
 
     def shutdown(self) -> None:
         """종료 직전 호출: 남은 요청을 버리고 즉시(동기) 음소거한다."""
@@ -262,7 +280,7 @@ class Engine:
         self._calib_h[self._calib_kind] = h
         self._calib_kind = None
         if h is None:
-            self._warning = W_CALIB_NO_FACE
+            self._set_calib_warning(W_CALIB_NO_FACE)
             return
         h_wide, h_zoom = self._calib_h["wide"], self._calib_h["zoom"]
         if h_wide is None or h_zoom is None:
@@ -270,7 +288,7 @@ class Engine:
         self._calib_h = {"wide": None, "zoom": None}
         th = compute_thresholds(h_wide, h_zoom)
         if th is None:
-            self._warning = W_CALIBRATION if h_zoom <= h_wide else W_CALIB_SMALL_GAP
+            self._set_calib_warning(W_CALIBRATION if h_zoom <= h_wide else W_CALIB_SMALL_GAP)
             return
         self.s.wide_h, self.s.zoom_h = th
         if self._warning in _CALIB_WARNINGS:

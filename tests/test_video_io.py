@@ -145,3 +145,10 @@ def test_open_failure_reported_as_lost_once():  # M6
         clock.t += 1 / 30
         p.step()
     assert len(lost) == 1
+
+
+def test_open_real_capture_raises_when_device_missing():  # 재검토 M6
+    import pytest
+    from knuzoom.video_io import open_real_capture
+    with pytest.raises(OSError):
+        open_real_capture(Settings(camera_index=99))

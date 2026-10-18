@@ -12,10 +12,20 @@ from knuzoom.zoom_labels import is_zoom_exe, mute_state_from_labels
 
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
+# 다른 라이브러리와 공유하는 ctypes.windll.kernel32를 건드리지 않도록 별도로 불러와 형식을 지정한다(64비트 HANDLE).
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.OpenProcess.restype = wintypes.HANDLE
+_k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+_k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+_k32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                             ctypes.POINTER(wintypes.DWORD))
+_k32.CloseHandle.restype = wintypes.BOOL
+_k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
 
 def _exe_path(pid: int) -> str | None:
     """프로세스 번호로 실행 파일 전체 경로를 얻는다(실패하면 None)."""
-    k32 = ctypes.windll.kernel32
+    k32 = _k32
     h = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not h:
         return None
@@ -67,5 +77,5 @@ class WindowsZoomAdapter:
 
     def press_toggle(self) -> None:
         # Zoom 설정에서 Alt+A "전역 단축키"를 켜 두어야 Zoom 창이 앞에 없어도 동작한다.
-        # 긴급 정지(Ctrl+Alt+K) 직후 Ctrl·Shift가 눌린 채로 남아 있으면 Zoom이 Alt+A로 인식하지 못하므로 먼저 뗀다.
-        send_keys("{VK_CONTROL up}{VK_SHIFT up}%a")
+        # 긴급 정지(Ctrl+Alt+K) 직후 Ctrl·Shift·Win이 눌린 채로 남아 있으면 Zoom이 Alt+A로 인식하지 못하므로 먼저 뗀다.
+        send_keys("{VK_CONTROL up}{VK_SHIFT up}{VK_LWIN up}{VK_RWIN up}%a")

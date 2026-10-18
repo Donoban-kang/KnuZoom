@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from knuzoom.config import default_settings_path, load_settings
+from knuzoom.config import default_settings_path, load_settings_with_problems
 from knuzoom.engine import Engine
 from knuzoom.faces import FaceAnalyzer
 from knuzoom.mic import MicController
@@ -29,8 +29,10 @@ def make_file_log(base_dir):
 
 def main() -> None:
     settings_path = default_settings_path()
-    s = load_settings(settings_path)
+    s, problems = load_settings_with_problems(settings_path)
     log = make_file_log(settings_path.parent)
+    if problems:
+        log(f"{datetime.now():%H:%M:%S} 설정 기본값 복원: {', '.join(problems)}")
 
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="knuzoom-mic")
 
@@ -60,7 +62,8 @@ def main() -> None:
     cam_thread = threading.Thread(target=pipeline.run, args=(stop,), daemon=True, name="knuzoom-cam")
 
     window = ControlWindow(engine, s, settings_path, on_quit=stop.set)
-    register_emergency_hotkey(s.emergency_hotkey, engine)
+    if not register_emergency_hotkey(s.emergency_hotkey, engine):
+        log(f"{datetime.now():%H:%M:%S} 긴급 정지 단축키 등록 실패: {s.emergency_hotkey}")
     tray = start_tray(window)
 
     cam_thread.start()

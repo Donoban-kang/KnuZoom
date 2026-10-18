@@ -71,3 +71,23 @@ def test_load_applies_sanitize(tmp_path):  # M4
     p.write_text('{"mute_window_s": -1, "zoom_h": "x"}', encoding="utf-8")
     s = load_settings(p)
     assert s.mute_window_s == 1.5 and s.zoom_h == 0.22
+
+
+def test_int_value_for_float_field_becomes_float():  # 재검토 M4
+    from knuzoom.config import sanitize_settings
+    s, problems = sanitize_settings(Settings(mute_window_s=2))
+    assert problems == [] and isinstance(s.mute_window_s, float) and s.mute_window_s == 2.0
+
+
+def test_wide_h_reported_once():  # 재검토 M4
+    from knuzoom.config import sanitize_settings
+    _, problems = sanitize_settings(Settings(wide_h="x", zoom_h=0.1))
+    assert problems.count("wide_h") == 1
+
+
+def test_load_reports_reset_fields(tmp_path):  # 재검토 M4
+    from knuzoom.config import load_settings_with_problems
+    p = tmp_path / "s.json"
+    p.write_text('{"ratio": 5}', encoding="utf-8")
+    s, problems = load_settings_with_problems(p)
+    assert s.ratio == 0.8 and problems == ["ratio"]

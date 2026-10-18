@@ -35,6 +35,7 @@ class ControlWindow:
         self.on_quit = on_quit
         self._calibrating = False
         self.calls = MainThreadCalls()  # 트레이 등 다른 스레드의 화면 작업 요청
+        self._closed = False
 
         self.root = tk.Tk()
         self.root.title("KnuZoom")
@@ -67,6 +68,8 @@ class ControlWindow:
     # ── 주기 갱신 ─────────────────────────────────────────────
     def _poll(self) -> None:
         self.calls.drain()
+        if self._closed:  # drain 중에 창이 닫혔으면 더 갱신하지 않는다
+            return
         self.engine.tick()
         st = self.engine.status()
         text = "음소거" if st.muted else "발언 가능"
@@ -88,9 +91,12 @@ class ControlWindow:
         self.engine.set_auto(not self.engine.status().auto)
 
     def _sync_dialog(self) -> None:
+        token = self.engine.sync_token()
         muted = messagebox.askyesno("상태 맞추기", "지금 Zoom 마이크가 '음소거' 상태입니까?\n"
                                     "(예 = 음소거, 아니요 = 해제)", parent=self.root)
-        self.engine.sync_mic(muted)
+        if not self.engine.sync_mic(muted, token):
+            messagebox.showinfo("상태 맞추기", "확인하시는 동안 KnuZoom이 마이크를 조작했습니다.\n"
+                                "Zoom 마이크 상태를 다시 보고 한 번 더 맞춰 주세요.", parent=self.root)
 
     def _calibrate(self, kind: str) -> None:
         self.engine.start_calibration(kind, time.monotonic())
@@ -152,7 +158,11 @@ class ControlWindow:
 
     def quit(self) -> None:
         """다른 스레드에서 불러도 된다."""
-        self.calls.post(self.root.destroy)
+        self.calls.post(self._close)
+
+    def _close(self) -> None:
+        self._closed = True
+        self.root.destroy()
 
     def run(self) -> None:
         self.root.after(POLL_MS, self._poll)
@@ -179,7 +189,8 @@ def start_tray(window: ControlWindow):
 def register_emergency_hotkey(hotkey: str, engine: Engine) -> bool:
     try:
         import keyboard
-        # 키를 뗄 때 실행: Ctrl이 눌린 채로 Alt+A가 나가 Zoom이 무시하는 것을 줄인다.
+        # 조합 키 중 하나를 뗄 때 실행한다(나머지 키는 아직 눌려 있을 수 있음).
+        # 남은 Ctrl 등은 WindowsZoomAdapter.press_toggle이 Alt+A 전에 떼어 준다.
         keyboard.add_hotkey(hotkey, engine.emergency_stop, trigger_on_release=True)
         return True
     except Exception:

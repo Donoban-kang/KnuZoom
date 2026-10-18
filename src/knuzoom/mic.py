@@ -35,10 +35,22 @@ class MicController:
         self.estimated_muted = True
         # 작업 스레드(apply)와 UI 스레드(sync_estimate)가 추정값을 함께 고치므로 잠근다.
         self._lock = threading.Lock()
+        self.press_count = 0  # Alt+A를 보낸 횟수. [상태 맞추기] 답이 낡았는지 판단하는 데 쓴다.
 
-    def sync_estimate(self, muted: bool) -> None:
+    def sync_estimate(self, muted: bool, since: int | None = None) -> bool:
+        """진행자가 알려준 실제 상태로 추정을 고친다.
+
+        since는 진행자에게 물어본 시점의 press_count. 그 뒤 Alt+A를 보냈다면 답이 낡았으므로 반영하지 않고 False.
+        """
         with self._lock:
+            if since is not None and since != self.press_count:
+                return False
             self.estimated_muted = muted
+            return True
+
+    def _press(self) -> None:
+        self.press_count += 1
+        self.adapter.press_toggle()
 
     def apply(self, want_muted: bool) -> ApplyResult:
         with self._lock:
@@ -51,7 +63,7 @@ class MicController:
         if first is None:
             # 예비 모드: 마지막으로 보낸 명령으로 상태를 추정한다.
             if self.estimated_muted != want_muted:
-                self.adapter.press_toggle()
+                self._press()
                 self.estimated_muted = want_muted
             return ApplyResult.ESTIMATED
         # Alt+A는 토글이므로 확인된 상태가 원하는 상태와 다를 때만 누른다(최초 1회 + 재시도 1회).
@@ -67,7 +79,7 @@ class MicController:
             if attempt == MAX_PRESSES:
                 break
             before = cur
-            self.adapter.press_toggle()
+            self._press()
             cur = self._settle(before)
         return ApplyResult.FAILED if want_muted else ApplyResult.BLOCKED
 
