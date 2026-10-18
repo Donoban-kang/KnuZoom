@@ -64,3 +64,10 @@ def test_reset():
     st.reset(5.0)
     assert st.state is Verdict.WIDE
     assert st.update(5.2, Verdict.ZOOM) is None
+
+
+def test_lone_sample_after_gap_does_not_transition():  # Final C1
+    st = Stabilizer(Settings())
+    st.update(0.0, Verdict.WIDE)
+    assert st.update(5.0, Verdict.ZOOM) is None
+    assert st.state is Verdict.WIDE

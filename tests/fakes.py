@@ -18,3 +18,16 @@ class FakeZoom:
         self.presses += 1
         if not self.stuck:
             self.muted = not self.muted
+
+
+class ScriptedZoom(FakeZoom):
+    """read_muted가 script 값을 차례로 돌려준다(소진되면 실제 상태)."""
+
+    def __init__(self, script, **kw):
+        super().__init__(**kw)
+        self.script = list(script)
+
+    def read_muted(self):
+        if self.script:
+            return self.script.pop(0)
+        return super().read_muted()

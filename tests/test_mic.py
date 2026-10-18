@@ -44,3 +44,17 @@ def test_sync_estimate():
     z = FakeZoom(muted=False, readable=False); c = MicController(z, 1.0, sleep=nosleep)
     c.sync_estimate(False)
     assert c.apply(False) is ApplyResult.ESTIMATED and z.presses == 0
+
+
+def test_unknown_read_during_retry_never_presses_blind():  # Final I1
+    from fakes import ScriptedZoom
+    z = ScriptedZoom([False, None, None, None], muted=False, stuck=True)
+    c = MicController(z, 1.0, sleep=nosleep)
+    assert c.apply(True) is ApplyResult.ESTIMATED and z.presses == 1
+
+
+def test_late_label_update_does_not_double_toggle():  # Final I2
+    from fakes import ScriptedZoom
+    z = ScriptedZoom([False, False, False], muted=False)   # 누른 뒤 두 번은 옛 상태를 보여줌
+    c = MicController(z, 1.0, sleep=nosleep)
+    assert c.apply(True) is ApplyResult.OK and z.presses == 1 and z.muted is True

@@ -1,7 +1,7 @@
 from knuzoom.zoom_labels import mute_state_from_labels
 
-MUTED = ["Unmute", "음소거 해제"]
-UNMUTED = ["Mute", "음소거"]
+MUTED = ["Unmute my audio", "오디오 음소거 해제"]
+UNMUTED = ["Mute my audio", "오디오 음소거"]
 
 
 def test_unmute_label_means_muted():
@@ -19,3 +19,10 @@ def test_mute_label_means_unmuted():
 
 def test_no_match_is_none():
     assert mute_state_from_labels(["Participants", "Chat"], MUTED, UNMUTED) is None
+
+
+def test_default_labels_ignore_ask_to_unmute_button():  # Final I3
+    from knuzoom.config import Settings
+    s = Settings()
+    names = ["Ask to Unmute", "Mute my audio (Alt+A)"]
+    assert mute_state_from_labels(names, s.zoom_label_when_muted, s.zoom_label_when_unmuted) is False

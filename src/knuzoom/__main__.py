@@ -69,9 +69,10 @@ def main() -> None:
     finally:
         stop.set()
         cam_thread.join(timeout=3)
+        worker.shutdown(wait=True, cancel_futures=True)  # 진행 중인 제어만 끝내고 대기 요청은 버림
+        engine.shutdown()                                # 종료 시 항상 음소거
         pipeline.close()
         analyzer.close()
-        worker.shutdown(wait=False)
         if tray is not None:
             tray.stop()
 

@@ -1,12 +1,16 @@
 """순간 판정을 모아 안정된 WIDE/ZOOM 상태로 확정한다."""
 from __future__ import annotations
 
+import math
 from collections import deque
 
 from knuzoom.config import Settings
 from knuzoom.detector import Verdict
 
 _EPS = 1e-9
+# 창 안에 기대 표본 수(창 길이 × 분석 fps)의 이 비율 이상이 있어야 전환한다.
+# 분석이 멈췄다 재개된 직후 표본 1개만으로 전환되는 것을 막는다.
+MIN_FILL = 0.6
 
 
 class Stabilizer:
@@ -38,7 +42,9 @@ class Stabilizer:
             return None  # 이력 부족
 
         recent = [x for (ts, x) in self._hist if ts > t - window + _EPS]
-        if recent and sum(x is target for x in recent) / len(recent) >= self.s.ratio - _EPS:
+        if len(recent) < math.ceil(MIN_FILL * window * self.s.analysis_fps):
+            return None
+        if sum(x is target for x in recent) / len(recent) >= self.s.ratio - _EPS:
             self.state = target
             self._ref = t
             return target

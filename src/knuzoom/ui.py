@@ -9,7 +9,7 @@ from tkinter import messagebox
 from knuzoom.config import Settings, save_settings
 from knuzoom.engine import Engine
 
-GREEN, RED, GRAY = "#1f9d55", "#d64545", "#666666"
+GREEN, RED, AMBER, GRAY = "#1f9d55", "#d64545", "#d98e04", "#666666"
 POLL_MS = 200
 
 # 설정 창에서 편집할 항목(라벨, 필드명)
@@ -66,10 +66,11 @@ class ControlWindow:
     def _poll(self) -> None:
         self.engine.tick()
         st = self.engine.status()
-        if st.muted:
-            self.mic_label.config(text="음소거", bg=RED)
-        else:
-            self.mic_label.config(text="발언 가능", bg=GREEN)
+        text = "음소거" if st.muted else "발언 가능"
+        if st.confirmed:
+            self.mic_label.config(text=text, bg=RED if st.muted else GREEN)
+        else:  # Zoom에서 실제 상태를 아직 확인하지 못함
+            self.mic_label.config(text=f"{text} (미확인)", bg=AMBER)
         self.verdict_label.config(text=f"판정: {st.verdict.value} (H {st.h:.0%}, 얼굴 {st.n})")
         self.warning_label.config(text=st.warning or "")
         self.auto_btn.config(text="자동 ON" if st.auto else "자동 OFF",

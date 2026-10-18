@@ -7,10 +7,19 @@ from knuzoom.engine import Engine
 from knuzoom.mic import MicController
 
 
-def make_engine_with_log(z):
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def make_engine_with_log(z, run=None, clock=None):
     log = []
+    kw = {} if run is None else {"run": run}
     e = Engine(Settings(), MicController(z, 1.0, sleep=lambda _: None), log.append,
-               clock_hms=lambda: "10:00:00")
+               clock_hms=lambda: "10:00:00", clock=clock or Clock(), **kw)
     return e, log
 
 
@@ -47,7 +56,7 @@ def test_zoom_unmutes_and_logs():
 def test_pending_state_applied_when_meeting_appears():  # Review Focus 3
     z = FakeZoom(muted=False, active=False); e = make_engine(z)
     e.tick(); assert e.status().warning == "대기" and z.presses == 0
-    z.active = True; e.tick()
+    z.active = True; e.clock.t += 1.0; e.tick()
     assert z.muted is True and e.status().warning is None
 
 
@@ -116,3 +125,66 @@ def test_calibration_failure_keeps_values():
     e.start_calibration("zoom", 3.0); feed_stats(e, FaceStats(4, 0.10), 3.0, 5.2)
     assert (e.s.wide_h, e.s.zoom_h) == (0.15, 0.22)
     assert e.status().warning == "보정 실패: 확대 장면이 넓은 장면보다 커야 합니다"
+
+
+def test_audio_joined_unmuted_after_unreadable_start_gets_muted():  # Final C2
+    z = FakeZoom(muted=False, readable=False); e = make_engine(z)
+    e.tick()                                   # 오디오 미연결: 상태 읽기 불가 → 추정
+    z.readable = True                          # 컴퓨터 오디오 연결(해제 상태로 들어옴)
+    e.clock.t += 1.0; e.tick()
+    assert z.muted is True
+
+
+def test_rejoined_meeting_is_muted_again():  # Final C2
+    z = FakeZoom(muted=True); e = make_engine(z); e.tick()
+    z.active = False; e.clock.t += 2.0; e.tick()      # 회의 퇴장 감지
+    z.active = True; z.muted = False                  # 새 회의에 해제 상태로 입장
+    e.clock.t += 2.0; e.tick(); e.clock.t += 1.0; e.tick()
+    assert z.muted is True
+
+
+def test_watchdog_mutes_when_stats_stop():  # Final C3
+    z = FakeZoom(muted=True); e = make_engine(z); zoom_for(e, 1.2, t0=0.0)
+    assert z.muted is False
+    e.clock.t += 2.5; e.tick()
+    assert z.muted is True and e.status().warning == "카메라 끊김"
+
+
+def test_failed_mute_is_retried_and_unconfirmed():  # Final I4
+    z = FakeZoom(muted=True); e = make_engine(z); zoom_for(e, 1.2, t0=0.0)
+    z.stuck = True
+    wide_for(e, 1.8, t0=1.4)
+    assert e.status().warning == "음소거 실패" and e.status().confirmed is False
+    z.stuck = False; e.clock.t += 1.0; e.tick()
+    assert z.muted is True and e.status().confirmed is True
+
+
+def test_repeated_errors_do_not_pile_up_jobs():  # Final I5
+    jobs = []
+    z = FakeZoom(muted=True); e, _ = make_engine_with_log(z, run=jobs.append)
+    for _ in range(100):
+        e.on_error(RuntimeError("send failed"))
+    e.emergency_stop()
+    assert len(jobs) == 1
+    jobs.pop()()
+    assert z.muted is True
+
+
+def test_sync_reconciles_toward_desired_mute():  # Final I6
+    z = FakeZoom(muted=False, readable=False); e = make_engine(z)
+    e.sync_mic(False)
+    assert z.muted is True
+
+
+def test_shutdown_mutes_synchronously():  # Final I7
+    jobs = []
+    z = FakeZoom(muted=True); e, _ = make_engine_with_log(z, run=jobs.append)
+    zoom_for(e, 1.2, t0=0.0); jobs.clear(); z.muted = False
+    e.shutdown()
+    assert z.muted is True
+
+
+def test_error_is_logged():  # Final I8
+    z = FakeZoom(muted=True); e, log = make_engine_with_log(z)
+    e.on_error(ValueError("frame shape"))
+    assert any("오류" in line and "ValueError" in line and "frame shape" in line for line in log)

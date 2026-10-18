@@ -27,8 +27,8 @@ class Settings:
     calibration_sample_s: float = 2.0
     emergency_hotkey: str = "ctrl+alt+k"
     zoom_window_titles: list[str] = field(default_factory=lambda: ["Zoom Meeting", "Zoom 회의"])
-    zoom_label_when_muted: list[str] = field(default_factory=lambda: ["Unmute", "음소거 해제"])
-    zoom_label_when_unmuted: list[str] = field(default_factory=lambda: ["Mute", "음소거"])
+    zoom_label_when_muted: list[str] = field(default_factory=lambda: ["Unmute my audio", "오디오 음소거 해제"])
+    zoom_label_when_unmuted: list[str] = field(default_factory=lambda: ["Mute my audio", "오디오 음소거"])
 
 
 def default_settings_path() -> Path:

@@ -99,3 +99,34 @@ def test_reconnects_after_two_seconds_and_resumes_stats():
     assert h.stats == []
     for _ in range(10): h.p.step()
     assert len(h.lost) == 1 and len(h.stats) >= 1
+
+
+def test_run_survives_read_exception_and_reports_it():  # Final C3
+    import threading
+
+    class BoomCapture(FakeCapture):
+        def read(self):
+            raise OSError("device gone")
+
+    h = SimpleNamespace(errors=[])
+    stop = threading.Event()
+    p = CameraPipeline(Settings(), open_capture=lambda: BoomCapture([]), open_vcam=FakeVCam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None,
+                       on_error=lambda e: (h.errors.append(e), stop.set()))
+    p.run(stop)
+    assert isinstance(h.errors[0], OSError)
+
+
+def test_frame_resized_to_vcam_size():  # Final I5
+    got = []
+
+    class SizedVCam(FakeVCam):
+        def send(self, frame_rgb):
+            got.append(frame_rgb.shape)
+
+    p = CameraPipeline(Settings(), open_capture=lambda: FakeCapture([np.zeros((480, 640, 3), np.uint8)]),
+                       open_vcam=SizedVCam, analyze=lambda f: FaceStats(1, 0.3),
+                       on_stats=lambda t, s: None, on_lost=lambda t: None, on_error=got.append)
+    p.step()
+    assert got == [(720, 1280, 3)]
