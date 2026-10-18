@@ -6,8 +6,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from knuzoom.config import Settings, save_settings
+from knuzoom.config import Settings, sanitize_settings, save_settings
 from knuzoom.engine import Engine
+from knuzoom.ui_calls import MainThreadCalls
 
 GREEN, RED, AMBER, GRAY = "#1f9d55", "#d64545", "#d98e04", "#666666"
 POLL_MS = 200
@@ -33,6 +34,7 @@ class ControlWindow:
         self.path = settings_path
         self.on_quit = on_quit
         self._calibrating = False
+        self.calls = MainThreadCalls()  # 트레이 등 다른 스레드의 화면 작업 요청
 
         self.root = tk.Tk()
         self.root.title("KnuZoom")
@@ -64,6 +66,7 @@ class ControlWindow:
 
     # ── 주기 갱신 ─────────────────────────────────────────────
     def _poll(self) -> None:
+        self.calls.drain()
         self.engine.tick()
         st = self.engine.status()
         text = "음소거" if st.muted else "발언 가능"
@@ -107,6 +110,7 @@ class ControlWindow:
             entries[name] = e
 
         def save() -> None:
+            new_values = {}
             try:
                 for name, e in entries.items():
                     raw = e.get().strip()
@@ -121,10 +125,21 @@ class ControlWindow:
                         new = float(raw)
                     else:
                         new = raw
-                    setattr(self.s, name, new)
+                    new_values[name] = new
             except ValueError:
                 messagebox.showerror("설정", "숫자 항목을 확인해 주세요.", parent=win)
                 return
+            candidate = Settings(**{**self.s.__dict__, **new_values})
+            _, problems = sanitize_settings(candidate)
+            if problems:
+                labels = {n: l for l, n in _EDITABLE}
+                bad = ", ".join(labels.get(p, p) for p in problems)
+                messagebox.showerror("설정", f"허용 범위를 벗어난 항목이 있습니다: {bad}\n"
+                                     "(WIDE 기준은 ZOOM 기준보다 작아야 하고, 시간은 0보다 커야 합니다)",
+                                     parent=win)
+                return
+            for name, value in new_values.items():
+                setattr(self.s, name, value)
             save_settings(self.s, self.path)
             win.destroy()
 
@@ -132,10 +147,12 @@ class ControlWindow:
                                                      padx=6, pady=6)
 
     def show(self) -> None:
-        self.root.after(0, self.root.deiconify)
+        """다른 스레드에서 불러도 된다."""
+        self.calls.post(self.root.deiconify)
 
     def quit(self) -> None:
-        self.root.after(0, self.root.destroy)
+        """다른 스레드에서 불러도 된다."""
+        self.calls.post(self.root.destroy)
 
     def run(self) -> None:
         self.root.after(POLL_MS, self._poll)
@@ -162,7 +179,8 @@ def start_tray(window: ControlWindow):
 def register_emergency_hotkey(hotkey: str, engine: Engine) -> bool:
     try:
         import keyboard
-        keyboard.add_hotkey(hotkey, engine.emergency_stop)
+        # 키를 뗄 때 실행: Ctrl이 눌린 채로 Alt+A가 나가 Zoom이 무시하는 것을 줄인다.
+        keyboard.add_hotkey(hotkey, engine.emergency_stop, trigger_on_release=True)
         return True
     except Exception:
         return False

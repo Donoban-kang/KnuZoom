@@ -72,6 +72,10 @@ class CameraPipeline:
             try:
                 self._cap = self.open_capture()
             except Exception:
+                # 열기 실패도 끊김으로 알린다(한 번만). 이후 재시도는 간격을 둔다.
+                if not self._lost:
+                    self._lost = True
+                    self.on_lost(t)
                 self._lost_at = t
                 return
         ok, frame = self._cap.read()

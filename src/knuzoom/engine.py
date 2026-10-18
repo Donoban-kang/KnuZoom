@@ -20,6 +20,9 @@ W_ESTIMATED = "상태 추정 중(Zoom 상태를 읽을 수 없음)"
 W_CAMERA_LOST = "카메라 끊김"
 W_ERROR = "오류 발생"
 W_CALIBRATION = "보정 실패: 확대 장면이 넓은 장면보다 커야 합니다"
+W_CALIB_NO_FACE = "보정 실패: 얼굴이 검출되지 않았습니다"
+W_CALIB_SMALL_GAP = "보정 실패: 넓은 장면과 확대 장면의 차이가 너무 작습니다"
+_CALIB_WARNINGS = {W_CALIBRATION, W_CALIB_NO_FACE, W_CALIB_SMALL_GAP}
 W_EMERGENCY_HOLD = "긴급 정지 후 대기: 넓은 장면을 거쳐 다시 확대되면 자동 해제"
 _MIC_WARNINGS = {W_WAITING, W_BLOCKED, W_MUTE_FAILED, W_ESTIMATED}
 
@@ -228,8 +231,8 @@ class Engine:
 
     def sync_mic(self, muted: bool) -> None:
         """[상태 맞추기]: 진행자가 알려준 실제 상태로 추정을 고치고, 원하는 상태로 다시 맞춘다."""
+        self.mic.sync_estimate(muted)  # 진행 중인 제어가 끝날 때까지 기다릴 수 있으므로 엔진 잠금 밖에서
         with self._lock:
-            self.mic.sync_estimate(muted)
             self._request(self._muted, None)
 
     def shutdown(self) -> None:
@@ -255,17 +258,22 @@ class Engine:
             if stats.n >= 1:
                 self._calib_samples.append(stats.h)
             return
-        self._calib_h[self._calib_kind] = median_h(self._calib_samples)
+        h = median_h(self._calib_samples)
+        self._calib_h[self._calib_kind] = h
         self._calib_kind = None
-        if self._calib_h["wide"] is None or self._calib_h["zoom"] is None:
+        if h is None:
+            self._warning = W_CALIB_NO_FACE
             return
-        th = compute_thresholds(self._calib_h["wide"], self._calib_h["zoom"])
+        h_wide, h_zoom = self._calib_h["wide"], self._calib_h["zoom"]
+        if h_wide is None or h_zoom is None:
+            return
         self._calib_h = {"wide": None, "zoom": None}
+        th = compute_thresholds(h_wide, h_zoom)
         if th is None:
-            self._warning = W_CALIBRATION
+            self._warning = W_CALIBRATION if h_zoom <= h_wide else W_CALIB_SMALL_GAP
             return
         self.s.wide_h, self.s.zoom_h = th
-        if self._warning == W_CALIBRATION:
+        if self._warning in _CALIB_WARNINGS:
             self._warning = None
 
     def calibration_running(self) -> bool:

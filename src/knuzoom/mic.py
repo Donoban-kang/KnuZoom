@@ -1,6 +1,7 @@
 """Zoom 마이크를 원하는 상태로 맞추는 제어기."""
 from __future__ import annotations
 
+import threading
 import time
 from enum import Enum
 from typing import Callable, Protocol
@@ -32,11 +33,18 @@ class MicController:
         self.verify_delay_s = verify_delay_s
         self.sleep = sleep
         self.estimated_muted = True
+        # 작업 스레드(apply)와 UI 스레드(sync_estimate)가 추정값을 함께 고치므로 잠근다.
+        self._lock = threading.Lock()
 
     def sync_estimate(self, muted: bool) -> None:
-        self.estimated_muted = muted
+        with self._lock:
+            self.estimated_muted = muted
 
     def apply(self, want_muted: bool) -> ApplyResult:
+        with self._lock:
+            return self._apply_locked(want_muted)
+
+    def _apply_locked(self, want_muted: bool) -> ApplyResult:
         if not self.adapter.meeting_active():
             return ApplyResult.NO_MEETING
         first = self.adapter.read_muted()

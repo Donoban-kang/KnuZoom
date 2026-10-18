@@ -26,3 +26,11 @@ def test_default_labels_ignore_ask_to_unmute_button():  # Final I3
     s = Settings()
     names = ["Ask to Unmute", "Mute my audio (Alt+A)"]
     assert mute_state_from_labels(names, s.zoom_label_when_muted, s.zoom_label_when_unmuted) is False
+
+
+def test_is_zoom_exe():  # M3
+    from knuzoom.zoom_labels import is_zoom_exe
+    assert is_zoom_exe(r"C:\Users\b\AppData\Roaming\Zoom\bin\Zoom.exe")
+    assert is_zoom_exe(r"C:\Program Files\Zoom\bin\zoom.exe")
+    assert not is_zoom_exe(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    assert not is_zoom_exe(None)
