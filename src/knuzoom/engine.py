@@ -20,6 +20,7 @@ W_ESTIMATED = "상태 추정 중(Zoom 상태를 읽을 수 없음)"
 W_CAMERA_LOST = "카메라 끊김"
 W_ERROR = "오류 발생"
 W_CALIBRATION = "보정 실패: 확대 장면이 넓은 장면보다 커야 합니다"
+W_EMERGENCY_HOLD = "긴급 정지 후 대기: 넓은 장면을 거쳐 다시 확대되면 자동 해제"
 _MIC_WARNINGS = {W_WAITING, W_BLOCKED, W_MUTE_FAILED, W_ESTIMATED}
 
 
@@ -70,6 +71,8 @@ class Engine:
         self._muted = True
         self._pending = True
         self._auto = True
+        # 긴급 정지 당시 확대돼 있던 발언자는, 넓은 장면을 거친 새 확대 전까지 해제하지 않는다.
+        self._emergency_hold = False
         self._warning: str | None = None
         self._confirmed = False
         self._last = (Verdict.UNCERTAIN, 0, 0.0)
@@ -154,6 +157,12 @@ class Engine:
             self._collect_calibration(t, stats)
             prev = self.stab.state
             new = self.stab.update(t, v)
+            if new is Verdict.WIDE and self._emergency_hold:
+                self._emergency_hold = False
+                if self._warning == W_EMERGENCY_HOLD:
+                    self._warning = None
+            if new is Verdict.ZOOM and self._emergency_hold:
+                return
             if new is not None and self._auto:
                 self._muted = new is Verdict.WIDE
                 self._request(self._muted, f"{prev.value}→{new.value}")
@@ -203,12 +212,16 @@ class Engine:
             if on:
                 if self._warning == W_ERROR:
                     self._warning = None  # 진행자가 자동을 다시 켜면 오류 경고를 확인한 것으로 본다
-                self._muted = self.stab.state is Verdict.WIDE
+                self._muted = self._emergency_hold or self.stab.state is Verdict.WIDE
                 self._request(self._muted, None)
 
     def emergency_stop(self) -> None:
         with self._lock:
             prev = self.stab.state
+            if prev is Verdict.ZOOM:
+                self._emergency_hold = True
+                if self._warning is None or self._warning in _MIC_WARNINGS:
+                    self._warning = W_EMERGENCY_HOLD
             self._auto = False
             self._muted = True
             self._request(True, f"{prev.value}→긴급정지")

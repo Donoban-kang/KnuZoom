@@ -188,3 +188,26 @@ def test_error_is_logged():  # Final I8
     z = FakeZoom(muted=True); e, log = make_engine_with_log(z)
     e.on_error(ValueError("frame shape"))
     assert any("오류" in line and "ValueError" in line and "frame shape" in line for line in log)
+
+
+def test_auto_on_after_emergency_keeps_muted_until_new_zoom():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0)                        # 발언자 확대 → 해제
+    e.emergency_stop(); e.set_auto(True)
+    assert z.muted is True and e.status().muted is True
+    assert e.status().warning == "긴급 정지 후 대기: 넓은 장면을 거쳐 다시 확대되면 자동 해제"
+    zoom_for(e, 1.0, t0=1.4)                        # 같은 발언자 계속 확대 중
+    assert z.muted is True
+    wide_for(e, 1.8, t0=2.6)                        # 넓은 장면으로 복귀
+    assert e.status().warning is None
+    zoom_for(e, 1.2, t0=4.6)                        # 새 확대
+    assert z.muted is False
+
+
+def test_emergency_while_wide_does_not_hold_next_zoom():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    wide_for(e, 1.0, t0=0.0)
+    e.emergency_stop(); e.set_auto(True)
+    assert e.status().warning is None
+    zoom_for(e, 1.2, t0=1.2)
+    assert z.muted is False
