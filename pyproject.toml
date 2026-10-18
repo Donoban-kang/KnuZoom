@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knuzoom"
+version = "0.1.0"
+description = "추적 카메라 확대 연동 Zoom 자동 음소거 해제 보조 프로그램"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "numpy",
+    "opencv-python",
+    "mediapipe==0.10.14",
+    "pyvirtualcam",
+]
+
+[project.optional-dependencies]
+windows = ["pywinauto", "keyboard", "pystray", "pillow"]
+dev = ["pytest", "pyinstaller"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
