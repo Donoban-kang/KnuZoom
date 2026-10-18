@@ -1,0 +1,101 @@
+from types import SimpleNamespace
+
+import numpy as np
+
+from knuzoom.config import Settings
+from knuzoom.detector import FaceStats
+from knuzoom.video_io import CameraPipeline
+
+FRAME = np.zeros((720, 1280, 3), np.uint8)
+
+
+class FakeCapture:
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.released = False
+
+    def read(self):
+        if not self.frames:
+            return False, None
+        f = self.frames.pop(0)
+        return (f is not None), f
+
+    def release(self):
+        self.released = True
+
+
+class FakeVCam:
+    def __init__(self):
+        self.sent = 0
+
+    def send(self, frame_rgb):
+        self.sent += 1
+
+    def sleep_until_next_frame(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = -1 / 30
+
+    def __call__(self):
+        return self.t
+
+
+def raise_runtime_error(frame):
+    raise RuntimeError("boom")
+
+
+def make_pipeline(frames, analyze=None):
+    h = SimpleNamespace(stats=[], lost=[], errors=[], vcam=FakeVCam(), clock=FakeClock())
+    cap = FakeCapture(frames)
+    p = CameraPipeline(
+        Settings(),
+        open_capture=lambda: cap,
+        open_vcam=lambda: h.vcam,
+        analyze=analyze or (lambda f: FaceStats(1, 0.3)),
+        on_stats=lambda t, s: h.stats.append((t, s)),
+        on_lost=h.lost.append,
+        on_error=h.errors.append,
+        clock=h.clock,
+    )
+    orig_step = p.step
+
+    def step():
+        h.clock.t += 1 / 30
+        orig_step()
+
+    h.p = SimpleNamespace(step=step)
+    return h
+
+
+def test_every_frame_forwarded_analysis_at_5fps():
+    h = make_pipeline(frames=[FRAME] * 30)
+    for _ in range(30): h.p.step()
+    assert h.vcam.sent == 30 and len(h.stats) == 5   # t=0, .2, .4, .6, .8
+
+
+def test_camera_lost_after_15_failures_called_once():
+    h = make_pipeline(frames=[None] * 40)
+    for _ in range(40): h.p.step()
+    assert len(h.lost) == 1 and h.vcam.sent == 0
+
+
+def test_analyze_exception_goes_to_on_error_and_continues():
+    h = make_pipeline(frames=[FRAME] * 10, analyze=raise_runtime_error)
+    for _ in range(10): h.p.step()
+    assert len(h.errors) >= 1 and h.vcam.sent == 10
+
+
+def test_reconnects_after_two_seconds_and_resumes_stats():
+    h = make_pipeline(frames=[None] * 15 + [FRAME] * 30)
+    for _ in range(15): h.p.step()
+    assert len(h.lost) == 1 and h.stats == []
+    for _ in range(59): h.p.step()          # 재연결 대기(2초 미만)
+    assert h.stats == []
+    for _ in range(10): h.p.step()
+    assert len(h.lost) == 1 and len(h.stats) >= 1
