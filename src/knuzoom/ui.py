@@ -24,11 +24,17 @@ _EDITABLE = [
     ("해제 상태 버튼 문구(쉼표 구분)", "zoom_label_when_unmuted"),
     ("Zoom 회의 창 제목(쉼표 구분)", "zoom_window_titles"),
     ("긴급 정지 단축키(재시작 필요)", "emergency_hotkey"),
+    ("우리 기관 이름(녹화 표시, 재시작 필요)", "site_name"),
+    ("녹화 동의 기관(쉼표 구분)", "consent_parties"),
+    ("녹화 저장 폴더(비우면 문서\\KnuZoom 녹화)", "recording_dir"),
+    ("녹화할 모니터 번호(0부터)", "recording_monitor"),
+    ("녹화 기본 보관기간(일)", "retention_days"),
 ]
 
 
 class ControlWindow:
-    def __init__(self, engine: Engine, settings: Settings, settings_path: Path, on_quit) -> None:
+    def __init__(self, engine: Engine, settings: Settings, settings_path: Path, on_quit,
+                 recorder=None) -> None:
         self.engine = engine
         self.s = settings
         self.path = settings_path
@@ -61,6 +67,10 @@ class ControlWindow:
                   command=lambda: self._calibrate("wide")).pack(side="left", padx=2)
         tk.Button(row2, text="확대 장면 저장", width=12,
                   command=lambda: self._calibrate("zoom")).pack(side="left", padx=2)
+        self.recording = None
+        if recorder is not None:
+            from knuzoom.ui_recording import RecordingPanel
+            self.recording = RecordingPanel(self.root, recorder, settings)
         tk.Button(self.root, text="⚙ 설정", width=26, command=self._settings_dialog).pack(pady=(2, 4))
         tk.Label(self.root, text=f"긴급 정지: {self.s.emergency_hotkey.upper()}",
                  fg=GRAY, font=("Malgun Gothic", 9)).pack(pady=(0, 8))
@@ -81,6 +91,8 @@ class ControlWindow:
         self.warning_label.config(text=st.warning or "")
         self.auto_btn.config(text="자동 ON" if st.auto else "자동 OFF",
                              relief="raised" if st.auto else "sunken")
+        if self.recording is not None:
+            self.recording.poll()
         if self._calibrating and not self.engine.calibration_running():
             self._calibrating = False
             save_settings(self.s, self.path)

@@ -112,6 +112,8 @@ class Recorder:
             errors = validate(rec)
             if errors:
                 return StartResult(False, errors[0])
+            if self.overlay is None:  # 녹화 중 표시 없이 녹화하지 않는다
+                return StartResult(False, "녹화를 시작할 수 없습니다: 녹화 중 표시를 만들 수 없습니다")
             if not self.ffmpeg:
                 return StartResult(False, "녹화를 시작할 수 없습니다: FFmpeg를 찾을 수 없습니다")
             directory = storage.recording_dir(self.s)

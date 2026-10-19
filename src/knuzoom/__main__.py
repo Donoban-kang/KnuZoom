@@ -1,15 +1,20 @@
 """KnuZoom 실행: 설정 → Zoom 어댑터·제어기·엔진 → 카메라 스레드 → 진행자 창."""
 from __future__ import annotations
 
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 
 from knuzoom.config import default_settings_path, load_settings_with_problems
 from knuzoom.engine import Engine
 from knuzoom.faces import FaceAnalyzer
 from knuzoom.mic import MicController
+from knuzoom.recording.ffmpeg_cmd import find_ffmpeg
+from knuzoom.recording.recorder import Recorder
 from knuzoom.single_instance import acquire, show_already_running
 from knuzoom.ui import ControlWindow, register_emergency_hotkey, start_tray
 from knuzoom.video_io import CameraPipeline, open_real_capture, open_real_vcam
@@ -26,6 +31,36 @@ def make_file_log(base_dir):
             with path.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
     return log
+
+
+def make_recorder(s, engine, pipeline, log, log_dir: Path) -> Recorder:
+    app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else None
+    try:
+        from knuzoom.recording.overlay import RecordingOverlay
+        overlay = RecordingOverlay(s.site_name).apply
+    except Exception as exc:  # 표시를 못 만들면 녹화 시작이 거부된다
+        log(f"{datetime.now():%H:%M:%S} 녹화 표시 생성 실패: {exc!r}")
+        overlay = None
+
+    def spawn(cmd):
+        log_dir.mkdir(parents=True, exist_ok=True)
+        err = open(log_dir / "ffmpeg.log", "ab")
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        return subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err,
+                                creationflags=flags)
+
+    def open_audio():
+        from knuzoom.recording.devices_windows import WindowsAudioSource
+        return WindowsAudioSource()
+
+    recorder = Recorder(
+        s, ffmpeg=find_ffmpeg(app_dir), spawn=spawn, open_audio=open_audio,
+        gate_open=engine.mic_gate_open,
+        meeting_active=lambda: engine.meeting_present() is not False,
+        set_filter=lambda f: setattr(pipeline, "frame_filter", f),
+        log=log, overlay=overlay)
+    pipeline.on_filter_error = recorder.on_overlay_error
+    return recorder
 
 
 def main() -> None:
@@ -65,15 +100,22 @@ def main() -> None:
     stop = threading.Event()
     cam_thread = threading.Thread(target=pipeline.run, args=(stop,), daemon=True, name="knuzoom-cam")
 
-    window = ControlWindow(engine, s, settings_path, on_quit=stop.set)
+    recorder = make_recorder(s, engine, pipeline, log, settings_path.parent / "logs")
+    window = ControlWindow(engine, s, settings_path, on_quit=stop.set, recorder=recorder)
     if not register_emergency_hotkey(s.emergency_hotkey, engine):
         log(f"{datetime.now():%H:%M:%S} 긴급 정지 단축키 등록 실패: {s.emergency_hotkey}")
     tray = start_tray(window)
 
     cam_thread.start()
+    from knuzoom.ui_recording import ask_delete_expired
+    window.root.after(1000, lambda: ask_delete_expired(window.root, s))
     try:
         window.run()
     finally:
+        try:
+            recorder.stop("프로그램 종료")  # 녹화 파일을 먼저 마무리(동의 기록·해시)
+        except Exception as exc:
+            log(f"{datetime.now():%H:%M:%S} 녹화 종료 오류: {exc!r}")
         stop.set()
         cam_thread.join(timeout=3)
         worker.shutdown(wait=True, cancel_futures=True)  # 진행 중인 제어만 끝내고 대기 요청은 버림

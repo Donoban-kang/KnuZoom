@@ -294,3 +294,12 @@ def test_gate_closed_after_emergency():
     z = FakeZoom(muted=True); e = make_engine(z)
     zoom_for(e, 1.2, t0=0.0); e.emergency_stop()
     assert e.mic_gate_open() is False
+
+
+def test_meeting_present_tracks_last_known_state():
+    z = FakeZoom(muted=True, active=False); e = make_engine(z)
+    assert e.meeting_present() is None          # 아직 모름
+    e.tick()
+    assert e.meeting_present() is False
+    z.active = True; e.clock.t += 1.0; e.tick()
+    assert e.meeting_present() is True

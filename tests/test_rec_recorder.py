@@ -3,7 +3,6 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from knuzoom.config import Settings
 from knuzoom.recording.consent import ConsentRecord
@@ -199,3 +198,10 @@ def test_overlay_error_stops_recording(tmp_path):
     env.rec.start(consent())
     env.rec.on_overlay_error(RuntimeError("font"))
     assert not env.rec.recording and env.rec.warning == "녹화: 녹화 중 표시 오류로 종료"
+
+
+def test_start_refused_without_overlay(tmp_path):
+    env = Env(tmp_path)
+    env.rec.overlay = None
+    r = env.rec.start(consent())
+    assert r.message == "녹화를 시작할 수 없습니다: 녹화 중 표시를 만들 수 없습니다" and env.spawned == []

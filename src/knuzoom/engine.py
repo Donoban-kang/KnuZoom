@@ -301,6 +301,11 @@ class Engine:
         with self._lock:
             return self._calib_kind is not None
 
+    def meeting_present(self) -> bool | None:
+        """마지막으로 확인한 Zoom 회의 진행 여부(아직 모르면 None). UIA를 새로 조회하지 않는다."""
+        with self._lock:
+            return self._meeting_present
+
     def mic_gate_open(self) -> bool:
         """녹화에 회의실 마이크를 섞어도 되는지: Zoom에서 해제 중(확인됨 또는 상태 추정 모드)일 때만."""
         with self._lock:
