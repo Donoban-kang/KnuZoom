@@ -91,3 +91,21 @@ def test_load_reports_reset_fields(tmp_path):  # 재검토 M4
     p.write_text('{"ratio": 5}', encoding="utf-8")
     s, problems = load_settings_with_problems(p)
     assert s.ratio == 0.8 and problems == ["ratio"]
+
+
+def test_recording_defaults():
+    s = Settings()
+    assert s.site_name == "B대학" and s.consent_parties == ["A대학", "C대학", "D대학"]
+    assert (s.recording_dir, s.recording_monitor, s.recording_fps, s.retention_days) == ("", 0, 30, 30)
+    assert (s.min_free_gb_start, s.min_free_gb_stop) == (5.0, 2.0)
+
+
+def test_recording_dir_may_be_empty():
+    from knuzoom.config import sanitize_settings
+    assert sanitize_settings(Settings(recording_dir=""))[1] == []
+
+
+def test_retention_days_out_of_range():
+    from knuzoom.config import sanitize_settings
+    s, problems = sanitize_settings(Settings(retention_days=0))
+    assert s.retention_days == 30 and "retention_days" in problems

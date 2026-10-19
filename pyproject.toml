@@ -12,10 +12,11 @@ dependencies = [
     "opencv-python",
     "mediapipe==0.10.14",
     "pyvirtualcam",
+    "pillow",
 ]
 
 [project.optional-dependencies]
-windows = ["pywinauto", "keyboard", "pystray", "pillow"]
+windows = ["pywinauto", "keyboard", "pystray", "soundcard"]
 dev = ["pytest", "pyinstaller"]
 
 [tool.setuptools.packages.find]

@@ -29,6 +29,15 @@ class Settings:
     zoom_window_titles: list[str] = field(default_factory=lambda: ["Zoom Meeting", "Zoom 회의"])
     zoom_label_when_muted: list[str] = field(default_factory=lambda: ["Unmute my audio", "오디오 음소거 해제"])
     zoom_label_when_unmuted: list[str] = field(default_factory=lambda: ["Mute my audio", "오디오 음소거"])
+    # 녹화
+    site_name: str = "B대학"
+    consent_parties: list[str] = field(default_factory=lambda: ["A대학", "C대학", "D대학"])
+    recording_dir: str = ""  # 빈 값이면 문서\KnuZoom 녹화
+    recording_monitor: int = 0
+    recording_fps: int = 30
+    retention_days: int = 30
+    min_free_gb_start: float = 5.0
+    min_free_gb_stop: float = 2.0
 
 
 def default_settings_path() -> Path:
@@ -73,13 +82,23 @@ _RANGES: dict[str, tuple[float, float, bool]] = {
     "verify_delay_s": (0, 10, False),
     "camera_lost_frames": (1, 1000, True),
     "calibration_sample_s": (0, 30, False),
+    "recording_monitor": (0, 15, True),
+    "recording_fps": (1, 60, True),
+    "retention_days": (1, 3650, True),
+    "min_free_gb_start": (0, 1000, False),
+    "min_free_gb_stop": (0, 1000, False),
 }
+
+# 빈 문자열을 허용하는 문자열 항목
+_OPTIONAL_STR = {"recording_dir"}
 
 
 def _valid(name: str, value: object, default: object) -> bool:
     if isinstance(default, list):
         return isinstance(value, list) and bool(value) and all(isinstance(x, str) and x for x in value)
     if isinstance(default, str):
+        if name in _OPTIONAL_STR:
+            return isinstance(value, str)
         return isinstance(value, str) and bool(value.strip())
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
