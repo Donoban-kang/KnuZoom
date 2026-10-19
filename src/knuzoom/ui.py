@@ -6,8 +6,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from knuzoom.config import Settings, save_settings
+from knuzoom.config import Settings, sanitize_settings, save_settings
 from knuzoom.engine import Engine
+from knuzoom.ui_calls import MainThreadCalls
 
 GREEN, RED, AMBER, GRAY = "#1f9d55", "#d64545", "#d98e04", "#666666"
 POLL_MS = 200
@@ -33,6 +34,8 @@ class ControlWindow:
         self.path = settings_path
         self.on_quit = on_quit
         self._calibrating = False
+        self.calls = MainThreadCalls()  # 트레이 등 다른 스레드의 화면 작업 요청
+        self._closed = False
 
         self.root = tk.Tk()
         self.root.title("KnuZoom")
@@ -64,6 +67,9 @@ class ControlWindow:
 
     # ── 주기 갱신 ─────────────────────────────────────────────
     def _poll(self) -> None:
+        self.calls.drain()
+        if self._closed:  # drain 중에 창이 닫혔으면 더 갱신하지 않는다
+            return
         self.engine.tick()
         st = self.engine.status()
         text = "음소거" if st.muted else "발언 가능"
@@ -85,9 +91,12 @@ class ControlWindow:
         self.engine.set_auto(not self.engine.status().auto)
 
     def _sync_dialog(self) -> None:
+        token = self.engine.sync_token()
         muted = messagebox.askyesno("상태 맞추기", "지금 Zoom 마이크가 '음소거' 상태입니까?\n"
                                     "(예 = 음소거, 아니요 = 해제)", parent=self.root)
-        self.engine.sync_mic(muted)
+        if not self.engine.sync_mic(muted, token):
+            messagebox.showinfo("상태 맞추기", "확인하시는 동안 KnuZoom이 마이크를 조작했습니다.\n"
+                                "Zoom 마이크 상태를 다시 보고 한 번 더 맞춰 주세요.", parent=self.root)
 
     def _calibrate(self, kind: str) -> None:
         self.engine.start_calibration(kind, time.monotonic())
@@ -107,6 +116,7 @@ class ControlWindow:
             entries[name] = e
 
         def save() -> None:
+            new_values = {}
             try:
                 for name, e in entries.items():
                     raw = e.get().strip()
@@ -121,10 +131,21 @@ class ControlWindow:
                         new = float(raw)
                     else:
                         new = raw
-                    setattr(self.s, name, new)
+                    new_values[name] = new
             except ValueError:
                 messagebox.showerror("설정", "숫자 항목을 확인해 주세요.", parent=win)
                 return
+            candidate = Settings(**{**self.s.__dict__, **new_values})
+            _, problems = sanitize_settings(candidate)
+            if problems:
+                labels = {n: l for l, n in _EDITABLE}
+                bad = ", ".join(labels.get(p, p) for p in problems)
+                messagebox.showerror("설정", f"허용 범위를 벗어난 항목이 있습니다: {bad}\n"
+                                     "(WIDE 기준은 ZOOM 기준보다 작아야 하고, 시간은 0보다 커야 합니다)",
+                                     parent=win)
+                return
+            for name, value in new_values.items():
+                setattr(self.s, name, value)
             save_settings(self.s, self.path)
             win.destroy()
 
@@ -132,10 +153,16 @@ class ControlWindow:
                                                      padx=6, pady=6)
 
     def show(self) -> None:
-        self.root.after(0, self.root.deiconify)
+        """다른 스레드에서 불러도 된다."""
+        self.calls.post(self.root.deiconify)
 
     def quit(self) -> None:
-        self.root.after(0, self.root.destroy)
+        """다른 스레드에서 불러도 된다."""
+        self.calls.post(self._close)
+
+    def _close(self) -> None:
+        self._closed = True
+        self.root.destroy()
 
     def run(self) -> None:
         self.root.after(POLL_MS, self._poll)
@@ -162,7 +189,9 @@ def start_tray(window: ControlWindow):
 def register_emergency_hotkey(hotkey: str, engine: Engine) -> bool:
     try:
         import keyboard
-        keyboard.add_hotkey(hotkey, engine.emergency_stop)
+        # 조합 키 중 하나를 뗄 때 실행한다(나머지 키는 아직 눌려 있을 수 있음).
+        # 남은 Ctrl 등은 WindowsZoomAdapter.press_toggle이 Alt+A 전에 떼어 준다.
+        keyboard.add_hotkey(hotkey, engine.emergency_stop, trigger_on_release=True)
         return True
     except Exception:
         return False

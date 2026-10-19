@@ -130,3 +130,25 @@ def test_frame_resized_to_vcam_size():  # Final I5
                        on_stats=lambda t, s: None, on_lost=lambda t: None, on_error=got.append)
     p.step()
     assert got == [(720, 1280, 3)]
+
+
+def test_open_failure_reported_as_lost_once():  # M6
+    lost, clock = [], FakeClock()
+
+    def boom():
+        raise OSError("no device")
+
+    p = CameraPipeline(Settings(), open_capture=boom, open_vcam=FakeVCam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lost.append, on_error=lambda e: None, clock=clock)
+    for _ in range(200):
+        clock.t += 1 / 30
+        p.step()
+    assert len(lost) == 1
+
+
+def test_open_real_capture_raises_when_device_missing():  # 재검토 M6
+    import pytest
+    from knuzoom.video_io import open_real_capture
+    with pytest.raises(OSError):
+        open_real_capture(Settings(camera_index=99))

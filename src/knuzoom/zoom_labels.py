@@ -1,6 +1,8 @@
 """Zoom 회의 창 버튼 이름으로 마이크 상태를 판단한다(플랫폼 독립)."""
 from __future__ import annotations
 
+import ntpath
+
 
 def mute_state_from_labels(names: list[str], when_muted: list[str],
                            when_unmuted: list[str]) -> bool | None:
@@ -16,3 +18,10 @@ def mute_state_from_labels(names: list[str], when_muted: list[str],
         if any(name.startswith(label) for label in when_unmuted):
             return False
     return None
+
+
+def is_zoom_exe(path: str | None) -> bool:
+    """실행 파일 경로가 Zoom 클라이언트(Zoom.exe)인지 본다. 브라우저 탭 제목 오인 방지."""
+    if not path:
+        return False
+    return ntpath.basename(path).lower() == "zoom.exe"

@@ -27,6 +27,9 @@ class VCam(Protocol):
 
 def open_real_capture(s: Settings) -> Capture:
     cap = cv2.VideoCapture(s.camera_index, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap.release()
+        raise OSError(f"카메라 {s.camera_index}번을 열 수 없습니다")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, s.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, s.height)
     cap.set(cv2.CAP_PROP_FPS, s.fps)
@@ -72,6 +75,10 @@ class CameraPipeline:
             try:
                 self._cap = self.open_capture()
             except Exception:
+                # 열기 실패도 끊김으로 알린다(한 번만). 이후 재시도는 간격을 둔다.
+                if not self._lost:
+                    self._lost = True
+                    self.on_lost(t)
                 self._lost_at = t
                 return
         ok, frame = self._cap.read()

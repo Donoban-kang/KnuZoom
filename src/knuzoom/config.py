@@ -39,15 +39,75 @@ def default_settings_path() -> Path:
 
 
 def load_settings(path: Path) -> Settings:
-    """파일이 없거나 깨졌으면 기본값. 모르는 키는 무시하고 없는 키는 기본값."""
+    """파일이 없거나 깨졌으면 기본값. 모르는 키는 무시하고 없는 키·잘못된 값은 기본값."""
+    return load_settings_with_problems(path)[0]
+
+
+def load_settings_with_problems(path: Path) -> tuple[Settings, list[str]]:
+    """load_settings와 같고, 기본값으로 되돌린 항목 이름도 함께 돌려준다(로그용)."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return Settings()
+        return Settings(), []
     if not isinstance(data, dict):
-        return Settings()
+        return Settings(), []
     known = {f.name for f in fields(Settings)}
-    return Settings(**{k: v for k, v in data.items() if k in known})
+    return sanitize_settings(Settings(**{k: v for k, v in data.items() if k in known}))
+
+
+# 숫자 항목의 허용 범위: (최소, 최대, 최소값 포함 여부)
+_RANGES: dict[str, tuple[float, float, bool]] = {
+    "camera_index": (0, 99, True),
+    "width": (1, 7680, True),
+    "height": (1, 4320, True),
+    "fps": (1, 120, True),
+    "analysis_fps": (1, 30, True),
+    "min_face_confidence": (0, 1, False),
+    "zoom_h": (0, 1, False),
+    "wide_h": (0, 1, False),
+    "zoom_max_faces": (1, 50, True),
+    "wide_min_faces": (1, 50, True),
+    "unmute_window_s": (0, 30, False),
+    "mute_window_s": (0, 30, False),
+    "ratio": (0, 1, False),
+    "verify_delay_s": (0, 10, False),
+    "camera_lost_frames": (1, 1000, True),
+    "calibration_sample_s": (0, 30, False),
+}
+
+
+def _valid(name: str, value: object, default: object) -> bool:
+    if isinstance(default, list):
+        return isinstance(value, list) and bool(value) and all(isinstance(x, str) and x for x in value)
+    if isinstance(default, str):
+        return isinstance(value, str) and bool(value.strip())
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if isinstance(default, int) and not isinstance(value, int):
+        return False
+    if name not in _RANGES:
+        return True  # 범위가 정해지지 않은 숫자 항목은 형식만 확인
+    lo, hi, lo_inclusive = _RANGES[name]
+    return (value >= lo if lo_inclusive else value > lo) and value <= hi
+
+
+def sanitize_settings(s: Settings) -> tuple[Settings, list[str]]:
+    """잘못된 값(형식·범위)은 기본값으로 되돌리고, 되돌린 항목 이름을 함께 돌려준다."""
+    defaults = Settings()
+    values = asdict(s)
+    problems: list[str] = []
+    for f in fields(Settings):
+        default = getattr(defaults, f.name)
+        if not _valid(f.name, values[f.name], default):
+            values[f.name] = default
+            problems.append(f.name)
+        elif isinstance(default, float):
+            values[f.name] = float(values[f.name])  # JSON의 2 같은 정수를 실수로 맞춘다
+    if values["wide_h"] >= values["zoom_h"]:
+        values["wide_h"], values["zoom_h"] = defaults.wide_h, defaults.zoom_h
+        if "wide_h" not in problems:
+            problems.append("wide_h")
+    return Settings(**values), problems
 
 
 def save_settings(s: Settings, path: Path) -> None:

@@ -21,3 +21,7 @@ def test_missing_returns_none():
 def test_median():
     assert median_h([0.1, 0.5, 0.2]) == 0.2
     assert median_h([]) is None
+
+
+def test_tiny_gap_returns_none():  # M5
+    assert compute_thresholds(0.20, 0.22) is None
