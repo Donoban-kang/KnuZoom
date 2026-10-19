@@ -33,6 +33,7 @@ class SineAudio:
 
 
 def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔(cp1252)에서 한글 출력
     ffmpeg = sys.argv[1]
     ffprobe = str(Path(ffmpeg).with_name("ffprobe.exe"))
     out_dir = Path(tempfile.mkdtemp())

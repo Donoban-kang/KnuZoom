@@ -139,8 +139,14 @@ class Recorder:
             if self.threaded:
                 self._thread = threading.Thread(target=self._pump_loop, daemon=True, name="knuzoom-rec-audio")
                 self._thread.start()
-        self.log(f"{self.now():%H:%M:%S} 녹화 시작 {self.path.name}")
+        self._log(f"{self.now():%H:%M:%S} 녹화 시작 {self.path.name}")
         return StartResult(True, "", self.path)
+
+    def _log(self, line: str) -> None:
+        try:
+            self.log(line)
+        except Exception:
+            pass  # 로그 실패가 녹화 시작·종료를 깨뜨리지 않게
 
     # ── 음성 공급 ─────────────────────────────────────────────
     def _warn_once(self, w: str) -> None:
@@ -244,7 +250,7 @@ class Recorder:
         end = self.now()
         sha = storage.sha256_file(self.path) if self.path.exists() else "(파일 없음)"
         self._write_record(end, sha)
-        self.log(f"{end:%H:%M:%S} 녹화 종료({reason}) {self.path.name}")
+        self._log(f"{end:%H:%M:%S} 녹화 종료({reason}) {self.path.name}")
         return self.path
 
     def _write_record(self, end: datetime | None = None, sha: str | None = None) -> None:

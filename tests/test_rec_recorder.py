@@ -205,3 +205,15 @@ def test_start_refused_without_overlay(tmp_path):
     env.rec.overlay = None
     r = env.rec.start(consent())
     assert r.message == "녹화를 시작할 수 없습니다: 녹화 중 표시를 만들 수 없습니다" and env.spawned == []
+
+
+def test_log_failure_does_not_break_recording(tmp_path):
+    env = Env(tmp_path)
+
+    def bad_log(line):
+        raise UnicodeEncodeError("cp1252", "녹화", 0, 1, "x")
+
+    env.rec.log = bad_log
+    r = env.rec.start(consent())
+    assert r.ok and env.rec.recording
+    assert env.rec.stop() == r.path and not env.rec.recording
