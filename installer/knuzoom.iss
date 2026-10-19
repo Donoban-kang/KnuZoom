@@ -42,6 +42,8 @@ Name: "desktopicon"; Description: "바탕화면에 KnuZoom 바로가기 만들�
 [Files]
 Source: "..\dist\KnuZoom\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\dist\KnuZoomProbe.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\third_party\ffmpeg\ffmpeg.exe"; DestDir: "{app}\ffmpeg"; Flags: ignoreversion
+Source: "..\third_party\ffmpeg\LICENSE.txt"; DestDir: "{app}\ffmpeg"; DestName: "FFmpeg-LICENSE.txt"; Flags: ignoreversion
 Source: "..\docs\install.md"; DestDir: "{app}\docs"; DestName: "설치안내.txt"; Flags: ignoreversion
 Source: "..\docs\rehearsal.md"; DestDir: "{app}\docs"; DestName: "리허설체크리스트.txt"; Flags: ignoreversion
 

@@ -152,3 +152,74 @@ def test_open_real_capture_raises_when_device_missing():  # 재검토 M6
     from knuzoom.video_io import open_real_capture
     with pytest.raises(OSError):
         open_real_capture(Settings(camera_index=99))
+
+
+def test_frame_filter_applied_before_send():
+    got = []
+
+    class KeepVCam(FakeVCam):
+        def send(self, frame_rgb):
+            got.append(frame_rgb)
+
+    p = CameraPipeline(Settings(), open_capture=lambda: FakeCapture([FRAME]), open_vcam=KeepVCam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=lambda e: None)
+    p.frame_filter = lambda f: np.full_like(f, 255)
+    p.step()
+    assert len(got) == 1 and np.all(got[0] == 255)
+
+
+def test_frame_filter_error_still_sends():
+    errors, vcam = [], FakeVCam()
+
+    def boom(f):
+        raise RuntimeError("overlay")
+
+    p = CameraPipeline(Settings(), open_capture=lambda: FakeCapture([FRAME]), open_vcam=lambda: vcam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=errors.append)
+    p.frame_filter = boom
+    p.step()
+    assert vcam.sent == 1 and len(errors) == 1
+
+
+def test_frame_filter_error_goes_to_filter_handler_not_engine():
+    errors, filt_errors = [], []
+    p = CameraPipeline(Settings(), open_capture=lambda: FakeCapture([FRAME]), open_vcam=FakeVCam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=errors.append)
+    p.frame_filter = lambda f: 1 / 0
+    p.on_filter_error = filt_errors.append
+    p.step()
+    assert errors == [] and len(filt_errors) == 1
+
+
+def test_reopen_switches_camera_and_keeps_last_frame():
+    opened = []
+    caps = [FakeCapture([FRAME] * 5), FakeCapture([FRAME + 7] * 5)]
+    p = CameraPipeline(Settings(), open_capture=lambda: (opened.append(1), caps[len(opened) - 1])[1],
+                       open_vcam=FakeVCam, analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=lambda e: None)
+    p.step()
+    assert p.last_frame is not None and p.last_frame.max() == 0
+    p.reopen()
+    p.step()
+    assert len(opened) == 2 and caps[0].released and p.last_frame.max() == 7
+
+
+def test_negative_camera_index_never_opens_a_device():  # I8
+    import pytest
+    from knuzoom.video_io import open_real_capture
+    with pytest.raises(OSError):
+        open_real_capture(Settings(camera_index=-1))
+
+
+def test_last_sent_at_updated_on_send():  # I4
+    clock = FakeClock()
+    p = CameraPipeline(Settings(), open_capture=lambda: FakeCapture([FRAME]), open_vcam=FakeVCam,
+                       analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=lambda e: None, clock=clock)
+    assert p.last_sent_at is None
+    clock.t = 3.0
+    p.step()
+    assert p.last_sent_at == 3.0

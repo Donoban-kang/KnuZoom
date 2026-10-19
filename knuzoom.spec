@@ -6,8 +6,8 @@ from PyInstaller.utils.hooks import collect_data_files
 a = Analysis(
     ["src/knuzoom/__main__.py"],
     pathex=["src"],
-    datas=collect_data_files("mediapipe"),
-    hiddenimports=["pywinauto", "keyboard", "pystray._win32"],
+    datas=collect_data_files("mediapipe") + collect_data_files("soundcard"),
+    hiddenimports=["pywinauto", "keyboard", "pystray._win32", "soundcard", "pygrabber"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="KnuZoom", console=False)

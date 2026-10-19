@@ -271,3 +271,63 @@ def test_stale_sync_answer_is_ignored():  # 재검토 I2
     assert z.muted is True
     assert e.sync_mic(False, token) is False   # 낡은 답은 반영하지 않음
     assert z.muted is True
+
+
+def test_gate_closed_while_muted():
+    z = FakeZoom(muted=True); e = make_engine(z); e.tick()
+    assert e.mic_gate_open() is False
+
+
+def test_gate_open_when_unmuted_and_confirmed():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.mic_gate_open() is True
+
+
+def test_gate_open_in_estimated_mode_when_unmuted():  # 녹화 RF5
+    z = FakeZoom(muted=True, readable=False); e = make_engine(z); e.tick()
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.mic_gate_open() is True
+
+
+def test_gate_closed_after_emergency():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0); e.emergency_stop()
+    assert e.mic_gate_open() is False
+
+
+def test_meeting_present_tracks_last_known_state():
+    z = FakeZoom(muted=True, active=False); e = make_engine(z)
+    assert e.meeting_present() is None          # 아직 모름
+    e.tick()
+    assert e.meeting_present() is False
+    z.active = True; e.clock.t += 1.0; e.tick()
+    assert e.meeting_present() is True
+
+
+def test_camera_changed_mutes_and_requires_new_history():
+    z = FakeZoom(muted=True); e, log = make_engine_with_log(z)
+    zoom_for(e, 1.2, t0=0.0)
+    assert z.muted is False
+    e.camera_changed()
+    assert z.muted is True and log[-1] == "10:00:00 ZOOM→카메라변경 음소거 성공"
+    e.on_stats(1.4, FaceStats(1, 0.3))
+    assert z.muted is True                     # 새 카메라 이력이 1초 쌓이기 전에는 해제하지 않음
+
+
+def test_gate_closes_when_host_mutes_us():  # I1
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.mic_gate_open() is True
+    z.muted = True                       # 호스트가 B대학을 음소거
+    presses = z.presses
+    e.clock.t += 1.0; e.tick()
+    assert e.mic_gate_open() is False and z.presses == presses   # 다시 해제하지는 않음
+
+
+def test_estimated_flag_cleared_by_blocked_result():  # I2
+    z = FakeZoom(muted=True, readable=False); e = make_engine(z); e.tick()
+    z.readable = True; z.stuck = True     # 이제 상태를 읽을 수 있고, 호스트가 해제를 막음
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.status().warning == "호스트(A대학)가 해제를 막았을 수 있음"
+    assert e.mic_gate_open() is False
