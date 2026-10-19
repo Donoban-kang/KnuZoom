@@ -37,6 +37,17 @@ jobs:
       - name: 실행파일 빌드(PyInstaller)
         run: pyinstaller --noconfirm knuzoom.spec
 
+      - name: 실행 시험(빌드된 KnuZoom.exe가 켜지는지)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\KnuZoom\KnuZoom.exe" -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) { Write-Error "KnuZoom.exe가 시작 직후 종료됨(종료 코드 $($p.ExitCode))"; exit 1 }
+          Write-Host "KnuZoom.exe 실행 유지 확인(PID $($p.Id))"
+          Stop-Process -Id $p.Id -Force
+          $log = Join-Path $env:APPDATA "KnuZoom\logs"
+          if (Test-Path $log) { Get-ChildItem $log | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName } }
+
       - name: Inno Setup 설치
         run: choco install innosetup -y --no-progress
 
