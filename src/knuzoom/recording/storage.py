@@ -9,7 +9,7 @@ from pathlib import Path
 
 from knuzoom.config import Settings
 
-_FORBIDDEN = re.compile(r'[\\/:*?"<>|]')
+_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')  # Windows 금지 문자 + 제어 문자(탭·줄바꿈 등)
 _DELETE_DATE = re.compile(r"삭제 예정일: (\d{4}-\d{2}-\d{2})")
 MAX_NAME = 30
 
@@ -66,6 +66,33 @@ def expired_recordings(directory: Path, today: date) -> list[Path]:
         except (OSError, ValueError):
             continue
     return found
+
+
+_UNFINISHED = "SHA-256: (종료 시 계산)"
+
+
+def finalize_orphans(directory: Path, now: datetime, skip: Path | None = None) -> list[Path]:
+    """강제 종료 등으로 마무리되지 않은 녹화의 동의 기록을 다음 실행 때 채운다(해시 계산, 비정상 종료 표시)."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+    fixed = []
+    for txt in sorted(directory.glob("*.txt")):
+        mp4 = txt.with_suffix(".mp4")
+        if skip is not None and Path(skip) == mp4:
+            continue
+        try:
+            text = txt.read_text(encoding="utf-8")
+            if _UNFINISHED not in text:
+                continue
+            sha = sha256_file(mp4) if mp4.exists() else "(파일 없음)"
+            text = text.replace("녹화 종료: (녹화 중)",
+                                f"녹화 종료: (비정상 종료 — {now:%Y-%m-%d %H:%M:%S} 다음 실행 때 확인)")
+            txt.write_text(text.replace(_UNFINISHED, f"SHA-256: {sha}"), encoding="utf-8")
+            fixed.append(mp4)
+        except OSError:
+            continue
+    return fixed
 
 
 def delete_recording(mp4: Path) -> None:

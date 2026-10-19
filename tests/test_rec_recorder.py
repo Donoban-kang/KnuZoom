@@ -36,6 +36,8 @@ class FakeProc:
 
     def wait(self, timeout):
         if self.hang and not self.killed:
+            import time
+            time.sleep(min(timeout, 0.5))  # 실제처럼 기다렸다가 시간 초과
             raise subprocess.TimeoutExpired("ffmpeg", timeout)
         return 0
 
@@ -303,3 +305,22 @@ def test_new_start_refused_while_previous_is_finalizing(tmp_path):  # I7
     assert r.ok is False and r.message == "이전 녹화를 마무리하는 중입니다. 잠시 후 다시 시도해 주세요"
     assert env.rec.wait_finalized(15)
     assert env.rec.start(consent()).ok
+
+
+def test_spawn_failure_cleans_up_and_reports(tmp_path):  # 경미 2
+    env = Env(tmp_path)
+
+    def boom(cmd):
+        raise OSError("ffmpeg.exe missing dll")
+
+    env.rec.spawn = boom
+    r = env.rec.start(consent())
+    assert r.ok is False and r.message == "녹화를 시작할 수 없습니다: FFmpeg 실행 실패"
+    assert list(tmp_path.iterdir()) == [] and not env.rec.recording and env.filters == []
+
+
+def test_all_device_warnings_shown(tmp_path):  # 경미 6
+    env = Env(tmp_path, audio=FakeAudio(loop=None, mic=None))
+    env.rec.start(consent())
+    env.rec.pump_once()
+    assert env.rec.warning == "녹화: 스피커 소리 녹음 실패 · 녹화: 마이크 녹음 실패"

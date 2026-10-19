@@ -1,7 +1,6 @@
 """KnuZoom 실행: 설정 → Zoom 어댑터·제어기·엔진 → 카메라 스레드 → 진행자 창."""
 from __future__ import annotations
 
-import subprocess
 import sys
 import threading
 import time
@@ -13,7 +12,7 @@ from knuzoom.config import default_settings_path, load_settings_with_problems
 from knuzoom.engine import Engine
 from knuzoom.faces import FaceAnalyzer
 from knuzoom.mic import MicController
-from knuzoom.recording.ffmpeg_cmd import find_ffmpeg
+from knuzoom.recording.ffmpeg_cmd import find_ffmpeg, make_spawn
 from knuzoom.recording.recorder import Recorder
 from knuzoom.single_instance import acquire, show_already_running
 from knuzoom.ui import ControlWindow, register_emergency_hotkey, start_tray
@@ -44,19 +43,12 @@ def make_recorder(s, engine, pipeline, log, log_dir: Path) -> Recorder:
         sent = pipeline.last_sent_at
         return sent is not None and time.monotonic() - sent < 5.0
 
-    def spawn(cmd):
-        log_dir.mkdir(parents=True, exist_ok=True)
-        err = open(log_dir / "ffmpeg.log", "ab")
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        return subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err,
-                                creationflags=flags)
-
     def open_audio():
         from knuzoom.recording.devices_windows import WindowsAudioSource
         return WindowsAudioSource()
 
     recorder = Recorder(
-        s, ffmpeg=find_ffmpeg(app_dir), spawn=spawn, open_audio=open_audio,
+        s, ffmpeg=find_ffmpeg(app_dir), spawn=make_spawn(log_dir), open_audio=open_audio,
         gate_open=engine.mic_gate_open,
         meeting_active=lambda: engine.meeting_present() is not False,
         set_filter=lambda f: setattr(pipeline, "frame_filter", f),
@@ -117,9 +109,13 @@ def main() -> None:
     if not register_emergency_hotkey(s.emergency_hotkey, engine):
         log(f"{datetime.now():%H:%M:%S} 긴급 정지 단축키 등록 실패: {s.emergency_hotkey}")
     tray = start_tray(window)
+    window.tray = tray
 
     cam_thread.start()
     from knuzoom.ui_recording import ask_delete_expired
+    from knuzoom.recording.storage import finalize_orphans, recording_dir
+    for orphan in finalize_orphans(recording_dir(s), datetime.now()):  # 지난번 강제 종료로 마무리 못 한 녹화
+        log(f"{datetime.now():%H:%M:%S} 마무리되지 않은 녹화 기록 보완: {orphan.name}")
     window.root.after(1000, lambda: ask_delete_expired(window.root, s))
     if first_run:  # 처음 실행: 우리 기관 이름과 우리 캠퍼스 카메라를 고른다
         window.root.after(500, lambda: window.open_camera_dialog(first_run=True))

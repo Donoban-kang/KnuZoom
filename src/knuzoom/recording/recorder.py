@@ -110,8 +110,7 @@ class Recorder:
         self._lock = threading.Lock()
         self._session: _Session | None = None
         self._finalizer: threading.Thread | None = None
-        self._warned: set[str] = set()
-        self.warning: str | None = None
+        self._warnings: list[str] = []
 
     # ── 상태 ─────────────────────────────────────────────────
     @property
@@ -131,6 +130,15 @@ class Recorder:
     def elapsed_s(self) -> float:
         s = self._session
         return self.monotonic() - s.t0 if s else 0.0
+
+    @property
+    def warning(self) -> str | None:
+        """녹화 경고 전부(여러 개면 ' · '로 이어서)."""
+        return " · ".join(self._warnings) if self._warnings else None
+
+    @warning.setter
+    def warning(self, w: str | None) -> None:
+        self._warnings = [w] if w else []
 
     def wait_finalized(self, timeout: float | None = None) -> bool:
         f = self._finalizer
@@ -169,13 +177,16 @@ class Recorder:
                 return StartResult(False, "녹화를 시작할 수 없습니다: 디스크 여유 공간 부족"
                                           f"({self.s.min_free_gb_start:g}GB 미만)")
             self.warning = None
-            self._warned = set()
             directory.mkdir(parents=True, exist_ok=True)
             start = self.now()
             path = storage.unique_path(directory, storage.safe_filename(rec.meeting, start))
             storage.record_path(path).write_text(render_text(rec, start, path.name), encoding="utf-8")
-            proc = self.spawn(build_command(self.ffmpeg, path, self.s.recording_monitor,
-                                            self.s.recording_fps, self.source))
+            try:
+                proc = self.spawn(build_command(self.ffmpeg, path, self.s.recording_monitor,
+                                                self.s.recording_fps, self.source))
+            except Exception:
+                storage.record_path(path).unlink(missing_ok=True)  # 녹화되지 않았으니 '(녹화 중)' 기록을 남기지 않는다
+                return StartResult(False, "녹화를 시작할 수 없습니다: FFmpeg 실행 실패")
             sess = _Session(rec=rec, start=start, path=path, proc=proc, t0=self.monotonic())
             try:
                 sess.audio = self.open_audio()
@@ -192,9 +203,8 @@ class Recorder:
 
     # ── 음성 공급 ─────────────────────────────────────────────
     def _warn_once(self, w: str) -> None:
-        if w not in self._warned:
-            self._warned.add(w)
-            self.warning = w
+        if w not in self._warnings:
+            self._warnings.append(w)
 
     def pump_once(self, sess: _Session | None = None) -> bool:
         """음성 1블록을 FFmpeg에 쓴다. 장치에서 아무것도 못 받았으면 False(호출 측이 시간을 맞춘다)."""
