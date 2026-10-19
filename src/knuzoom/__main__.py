@@ -10,6 +10,7 @@ from knuzoom.config import default_settings_path, load_settings_with_problems
 from knuzoom.engine import Engine
 from knuzoom.faces import FaceAnalyzer
 from knuzoom.mic import MicController
+from knuzoom.single_instance import acquire, show_already_running
 from knuzoom.ui import ControlWindow, register_emergency_hotkey, start_tray
 from knuzoom.video_io import CameraPipeline, open_real_capture, open_real_vcam
 from knuzoom.zoom_windows import WindowsZoomAdapter
@@ -28,6 +29,9 @@ def make_file_log(base_dir):
 
 
 def main() -> None:
+    if not acquire():  # 두 개가 실행되면 같은 마이크를 서로 반대로 조작할 수 있다
+        show_already_running()
+        return
     settings_path = default_settings_path()
     s, problems = load_settings_with_problems(settings_path)
     log = make_file_log(settings_path.parent)
