@@ -11,14 +11,20 @@
 
 ## 1. 설치
 1. **OBS Studio** 설치 (가상 카메라 드라이버 "OBS Virtual Camera" 제공). OBS 프로그램 자체를 실행할 필요는 없다.
-2. `KnuZoom` 폴더(`dist/KnuZoom/`)를 PC에 복사하고 `KnuZoom.exe` 바로가기를 바탕화면에 만든다.
-   - 개발 환경에서 직접 실행할 경우: Python 3.11 설치 후 `pip install -e .[windows]` → `python -m knuzoom`
-   - 실행파일 만들기: `pip install -e .[windows,dev]` → `pyinstaller knuzoom.spec`
+   - KnuZoom 설치 중 OBS가 없으면 내려받기 페이지를 열지 묻는다.
+2. **KnuZoom 설치 파일 받기**: GitHub 저장소 → **Actions** → "Windows 설치 파일 빌드" → 가장 최근 성공한 실행 → 아래 **Artifacts**의 `KnuZoom-Setup-<버전>` 내려받기 → 압축 풀기.
+3. `KnuZoom-Setup-<버전>.exe` 실행(관리자 권한 필요) → `C:\Program Files\KnuZoom`에 설치되고 시작 메뉴 "KnuZoom" 폴더에 다음이 생긴다.
+   - **KnuZoom**(본 프로그램), **Zoom 버튼 진단**(아래 2-3), **설치·비상 운영 안내**(이 문서), **KnuZoom 제거**
+   - 코드 서명이 없어 처음 실행할 때 SmartScreen "Windows의 PC 보호" 경고가 나올 수 있다 → [추가 정보] → [실행]. 기관 백신이 막으면 전산 부서에 예외 등록을 요청한다.
+4. 업그레이드: 새 설치 파일을 그대로 실행한다(설정은 유지). KnuZoom이 실행 중이면 종료하라는 안내가 나온다.
+5. 제거: Windows 설정 → 앱 → KnuZoom 제거. 설정·로그(`%APPDATA%\KnuZoom`)는 남으므로 필요하면 직접 지운다.
+- KnuZoom은 한 PC에서 하나만 실행된다(두 개가 같은 마이크를 반대로 조작하는 것을 방지).
+- 개발용 직접 실행: Python 3.11 설치 후 `pip install -e .[windows]` → `python -m knuzoom`
 
 ## 2. Zoom Workplace 설정
 1. **비디오 카메라**: 설정 > 비디오 > 카메라를 **"OBS Virtual Camera"** 로 선택 (KnuZoom 실행 중이어야 영상이 나온다).
 2. **전역 단축키**: 설정 > 키보드 단축키 > "오디오 음소거/음소거 해제(Alt+A)"의 **전역 단축키 사용** 체크 **(확인 필요)**.
-3. **버튼 문구 확인**: Zoom 테스트 회의에 참가한 상태에서 `python scripts/probe_zoom.py` 를 음소거 상태/해제 상태에서 각각 실행해 마이크 버튼 이름을 확인한다.
+3. **버튼 문구 확인**: Zoom 테스트 회의에 참가한 상태에서 시작 메뉴 **KnuZoom → Zoom 버튼 진단**(개발 환경에서는 `python scripts/probe_zoom.py`)을 음소거 상태/해제 상태에서 각각 실행해 마이크 버튼 이름을 확인한다.
    - 확인 결과 기록: 음소거 상태 버튼 = `__________` / 해제 상태 버튼 = `__________` / 회의 창 제목 = `__________`
    - KnuZoom [⚙ 설정]의 "음소거 상태 버튼 문구", "해제 상태 버튼 문구", "Zoom 회의 창 제목"에 반영한다.
    - 상태를 읽을 수 없으면 KnuZoom은 "상태 추정 중" 예비 모드로 동작한다(아래 [상태 맞추기] 참고).
