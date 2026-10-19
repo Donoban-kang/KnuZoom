@@ -79,6 +79,7 @@ class Engine:
         self._emergency_hold = False
         self._warning: str | None = None
         self._confirmed = False
+        self._estimated = False  # 마지막 적용이 상태 추정 모드였는지(경고 표시와 별개로 기억)
         self._last = (Verdict.UNCERTAIN, 0, 0.0)
         # 요청 병합: 작업 스레드에는 항상 "가장 최근 원하는 상태" 하나만 남긴다.
         self._slot: tuple[bool, str | None] | None = None
@@ -118,6 +119,8 @@ class Engine:
         r = self.mic.apply(want_muted)
         with self._lock:
             self._meeting_present = r is not ApplyResult.NO_MEETING
+            if r in (ApplyResult.OK, ApplyResult.ESTIMATED):
+                self._estimated = r is ApplyResult.ESTIMATED
             if want_muted == self._muted and self._slot is None:  # 최신 요청의 결과일 때만 반영
                 if r is ApplyResult.OK:
                     self._confirmed = True
@@ -297,6 +300,11 @@ class Engine:
     def calibration_running(self) -> bool:
         with self._lock:
             return self._calib_kind is not None
+
+    def mic_gate_open(self) -> bool:
+        """녹화에 회의실 마이크를 섞어도 되는지: Zoom에서 해제 중(확인됨 또는 상태 추정 모드)일 때만."""
+        with self._lock:
+            return (not self._muted) and (self._confirmed or self._estimated)
 
     # ── 표시 ─────────────────────────────────────────────────
     def status(self) -> Status:

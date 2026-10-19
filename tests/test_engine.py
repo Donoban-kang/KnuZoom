@@ -271,3 +271,26 @@ def test_stale_sync_answer_is_ignored():  # 재검토 I2
     assert z.muted is True
     assert e.sync_mic(False, token) is False   # 낡은 답은 반영하지 않음
     assert z.muted is True
+
+
+def test_gate_closed_while_muted():
+    z = FakeZoom(muted=True); e = make_engine(z); e.tick()
+    assert e.mic_gate_open() is False
+
+
+def test_gate_open_when_unmuted_and_confirmed():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.mic_gate_open() is True
+
+
+def test_gate_open_in_estimated_mode_when_unmuted():  # 녹화 RF5
+    z = FakeZoom(muted=True, readable=False); e = make_engine(z); e.tick()
+    zoom_for(e, 1.2, t0=0.0)
+    assert e.mic_gate_open() is True
+
+
+def test_gate_closed_after_emergency():
+    z = FakeZoom(muted=True); e = make_engine(z)
+    zoom_for(e, 1.2, t0=0.0); e.emergency_stop()
+    assert e.mic_gate_open() is False

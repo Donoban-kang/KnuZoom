@@ -65,6 +65,10 @@ class CameraPipeline:
         self._lost_at = 0.0
         self._last_analysis: float | None = None
         self._vcam_retry_at = -1.0
+        # 송출 직전에 프레임을 바꾸는 필터(녹화 중 표시). 다른 스레드가 바꿀 수 있어 지역 변수로 읽어 쓴다.
+        self.frame_filter: Callable[[np.ndarray], np.ndarray] | None = None
+        # 필터 오류를 받을 곳. 녹화 쪽에서 지정한다(엔진의 오류 처리로 보내지 않기 위해). 없으면 on_error.
+        self.on_filter_error: Callable[[Exception], None] | None = None
 
     def step(self) -> None:
         """프레임 1장을 처리한다."""
@@ -113,6 +117,12 @@ class CameraPipeline:
                 self._vcam = self.open_vcam()
             if frame.shape[1] != self.s.width or frame.shape[0] != self.s.height:
                 frame = cv2.resize(frame, (self.s.width, self.s.height))  # 가상 카메라 크기와 달라도 송출되게
+            flt = self.frame_filter
+            if flt is not None:
+                try:
+                    frame = flt(frame)
+                except Exception as exc:  # 표시 합성이 실패해도 영상은 끊지 않는다
+                    (self.on_filter_error or self.on_error)(exc)
             self._vcam.send(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         except Exception as exc:
             self._vcam_retry_at = t + RECONNECT_INTERVAL_S
