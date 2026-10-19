@@ -33,6 +33,7 @@ CAMERA_WATCHDOG_S = 2.0   # 분석 결과가 이만큼 끊기면 카메라 끊�
 PENDING_RETRY_S = 1.0     # 확인되지 않은 마이크 상태를 다시 맞추는 간격
 PRESENCE_CHECK_S = 2.0    # 회의 퇴장/재입장을 확인하는 간격
 ERROR_THROTTLE_S = 1.0    # 같은 오류가 반복될 때 처리 간격
+ACTUAL_CHECK_S = 1.0      # 해제 중 실제 Zoom 상태 재확인 간격(호스트가 음소거하면 녹음 게이트를 닫기 위해)
 
 
 @dataclass
@@ -80,6 +81,8 @@ class Engine:
         self._warning: str | None = None
         self._confirmed = False
         self._estimated = False  # 마지막 적용이 상태 추정 모드였는지(경고 표시와 별개로 기억)
+        self._actual_muted: bool | None = None  # 마지막으로 읽은 실제 Zoom 상태(모르면 None)
+        self._last_actual_check = clock()
         self._last = (Verdict.UNCERTAIN, 0, 0.0)
         # 요청 병합: 작업 스레드에는 항상 "가장 최근 원하는 상태" 하나만 남긴다.
         self._slot: tuple[bool, str | None] | None = None
@@ -119,8 +122,9 @@ class Engine:
         r = self.mic.apply(want_muted)
         with self._lock:
             self._meeting_present = r is not ApplyResult.NO_MEETING
-            if r in (ApplyResult.OK, ApplyResult.ESTIMATED):
-                self._estimated = r is ApplyResult.ESTIMATED
+            self._estimated = r is ApplyResult.ESTIMATED  # 결과마다 갱신(이전 추정 모드가 남지 않게)
+            self._actual_muted = {ApplyResult.OK: want_muted, ApplyResult.BLOCKED: True,
+                                  ApplyResult.FAILED: False}.get(r)
             if want_muted == self._muted and self._slot is None:  # 최신 요청의 결과일 때만 반영
                 if r is ApplyResult.OK:
                     self._confirmed = True
@@ -150,6 +154,17 @@ class Engine:
         # 보정 경고는 가장 낮은 우선순위: 비어 있거나 다른 보정 경고일 때만 표시한다.
         if self._warning is None or self._warning in _CALIB_WARNINGS:
             self._warning = w
+
+    def _check_actual(self) -> None:
+        """해제 중 실제 Zoom 상태를 다시 읽는다. 누가 음소거했으면 녹음 게이트가 닫히고 '미확인'으로 표시(다시 누르지는 않음)."""
+        try:
+            actual = self.mic.adapter.read_muted()
+        except Exception:
+            actual = None
+        with self._lock:
+            self._actual_muted = actual
+            if actual is not None and actual != self._muted:
+                self._confirmed = False
 
     def _check_presence(self) -> None:
         active = self.mic.adapter.meeting_active()
@@ -191,6 +206,10 @@ class Engine:
             if self._pending:
                 if now - self._last_request_at >= PENDING_RETRY_S:
                     self._request(self._muted, None)
+            elif (not self._muted and not self._job_scheduled
+                  and now - self._last_actual_check >= ACTUAL_CHECK_S):
+                self._last_actual_check = now
+                self.run(self._check_actual)
             elif not self._job_scheduled and now - self._last_presence_check >= PRESENCE_CHECK_S:
                 self._last_presence_check = now
                 self.run(self._check_presence)
@@ -317,7 +336,11 @@ class Engine:
     def mic_gate_open(self) -> bool:
         """녹화에 회의실 마이크를 섞어도 되는지: Zoom에서 해제 중(확인됨 또는 상태 추정 모드)일 때만."""
         with self._lock:
-            return (not self._muted) and (self._confirmed or self._estimated)
+            if self._muted:
+                return False
+            if self._estimated:  # 상태를 읽을 수 없는 모드: 실제로 음소거라고 읽힌 경우만 닫음
+                return self._actual_muted is not True
+            return self._confirmed and self._actual_muted is False
 
     # ── 표시 ─────────────────────────────────────────────────
     def status(self) -> Status:

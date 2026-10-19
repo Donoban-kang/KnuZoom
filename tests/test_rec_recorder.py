@@ -71,14 +71,16 @@ class Env:
         self.meeting = True
         self.free = kw.pop("free", 100.0)
         self.mono = 0.0
-        self.filters, self.logs, self.spawned = [], [], []
+        self.filters, self.logs, self.spawned, self.names = [], [], [], []
+        self.alive = True
         self.rec = Recorder(
             Settings(recording_dir=str(tmp_path)), ffmpeg=kw.pop("ffmpeg", "ffmpeg"),
             spawn=lambda cmd: (self.spawned.append(cmd), self.proc)[1],
             open_audio=lambda: self.audio, gate_open=lambda: self.gate,
             meeting_active=lambda: self.meeting, set_filter=self.filters.append, log=self.logs.append,
             now=lambda: datetime(2026, 10, 19, 14, 0, 5), monotonic=lambda: self.mono,
-            free_gb=lambda p: self.free, overlay=lambda f: f, threaded=False)
+            free_gb=lambda p: self.free, overlay_factory=lambda name: (self.names.append(name), (lambda f: f))[1],
+            overlay_alive=lambda: self.alive, threaded=False)
 
 
 def test_start_requires_valid_consent(tmp_path):
@@ -202,7 +204,11 @@ def test_overlay_error_stops_recording(tmp_path):
 
 def test_start_refused_without_overlay(tmp_path):
     env = Env(tmp_path)
-    env.rec.overlay = None
+
+    def broken(name):
+        raise OSError("font")
+
+    env.rec.overlay_factory = broken
     r = env.rec.start(consent())
     assert r.message == "녹화를 시작할 수 없습니다: 녹화 중 표시를 만들 수 없습니다" and env.spawned == []
 
@@ -217,3 +223,83 @@ def test_log_failure_does_not_break_recording(tmp_path):
     r = env.rec.start(consent())
     assert r.ok and env.rec.recording
     assert env.rec.stop() == r.path and not env.rec.recording
+
+
+def test_overlay_built_at_start_with_current_site_name(tmp_path):  # I5
+    env = Env(tmp_path)
+    env.rec.s.site_name = "C대학"
+    env.rec.start(consent(site_name="C대학"))
+    assert env.names == ["C대학"]
+
+
+def test_start_refused_when_virtual_camera_not_sending(tmp_path):  # I4
+    env = Env(tmp_path)
+    env.alive = False
+    r = env.rec.start(consent())
+    assert r.message == "녹화를 시작할 수 없습니다: 가상 카메라로 영상을 보내지 못하고 있습니다"
+
+
+def test_auto_stop_when_overlay_not_reaching_zoom(tmp_path):  # I4
+    env = Env(tmp_path)
+    env.rec.start(consent())
+    env.alive = False
+    env.rec.tick()
+    assert not env.rec.recording and env.rec.warning == "녹화: 녹화 중 표시를 내보낼 수 없어 종료"
+
+
+def test_mic_gate_opens_only_after_one_second(tmp_path):  # I3
+    env = Env(tmp_path, audio=FakeAudio(loop=0.0, mic=1.0), gate=True)
+    env.rec.start(consent())
+    env.rec.pump_once()
+    env.mono = 0.9
+    env.rec.pump_once()
+    assert set(env.proc.stdin.data) == {0}
+    env.mono = 1.05
+    env.proc.stdin.data.clear()
+    env.rec.pump_once()
+    assert max(env.proc.stdin.data) > 0
+
+
+class BlockingStdin(FakeStdin):
+    def __init__(self, proc):
+        super().__init__()
+        self.proc = proc
+
+    def write(self, b):
+        import time
+        while not self.proc.killed:      # FFmpeg가 읽지 않아 파이프가 가득 찬 상태
+            time.sleep(0.01)
+        raise BrokenPipeError()
+
+    def close(self):
+        if not self.proc.killed:
+            import time
+            while not self.proc.killed:  # 실제 버퍼 쓰기 잠금처럼 write가 끝날 때까지 막힘
+                time.sleep(0.01)
+        self.closed = True
+
+
+def test_stop_does_not_hang_when_ffmpeg_stops_reading(tmp_path):  # C1
+    import time
+    proc = FakeProc()
+    proc.stdin = BlockingStdin(proc)
+    env = Env(tmp_path, proc=proc)
+    env.rec.threaded = True
+    env.rec.start(consent())
+    time.sleep(0.1)
+    t0 = time.monotonic()
+    env.rec.stop()
+    assert env.rec.wait_finalized(10)
+    assert proc.killed and time.monotonic() - t0 < 6
+
+
+def test_new_start_refused_while_previous_is_finalizing(tmp_path):  # I7
+    proc = FakeProc(hang=True)
+    env = Env(tmp_path, proc=proc)
+    env.rec.threaded = True
+    env.rec.start(consent())
+    env.rec.stop()
+    r = env.rec.start(consent())
+    assert r.ok is False and r.message == "이전 녹화를 마무리하는 중입니다. 잠시 후 다시 시도해 주세요"
+    assert env.rec.wait_finalized(15)
+    assert env.rec.start(consent()).ok

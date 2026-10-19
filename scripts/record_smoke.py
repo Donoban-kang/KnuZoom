@@ -42,7 +42,8 @@ def main() -> int:
         ffmpeg=ffmpeg,
         spawn=lambda cmd: subprocess.Popen(cmd, stdin=subprocess.PIPE),
         open_audio=SineAudio, gate_open=lambda: False, meeting_active=lambda: True,
-        set_filter=lambda f: None, log=print, overlay=lambda f: f, source="test", threaded=False)
+        set_filter=lambda f: None, log=print, overlay_factory=lambda name: (lambda f: f),
+        source="test", threaded=False)
     consent = ConsentRecord("CI 녹화 시험", "B대학", ["A대학"], ["A대학"], "사전 공문", "", "시험", 1)
     result = rec.start(consent)
     if not result.ok:

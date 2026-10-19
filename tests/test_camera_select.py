@@ -13,9 +13,14 @@ def test_resolve_by_saved_name_even_if_index_moved():
     assert resolve_camera_index(s, NAMES) == 2
 
 
-def test_resolve_falls_back_to_index_when_name_missing():
+def test_missing_saved_camera_is_not_replaced_by_another():  # I8
     s = Settings(camera_name="없는 카메라", camera_index=0)
-    assert resolve_camera_index(s, NAMES) == 0
+    assert resolve_camera_index(s, NAMES) == -1
+
+
+def test_label_shows_missing_camera():
+    from knuzoom.camera_select import camera_label
+    assert camera_label(Settings(camera_name="AVer CAM520 Pro"), ["Integrated Webcam"]) == "AVer CAM520 Pro (연결 안 됨)"
 
 
 def test_resolve_never_picks_virtual_camera():

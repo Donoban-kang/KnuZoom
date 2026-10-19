@@ -31,11 +31,14 @@ def camera_choices(names: list[str]) -> list[tuple[int, str]]:
 
 
 def resolve_camera_index(s: Settings, names: list[str]) -> int:
-    """저장된 카메라 이름 → 그 번호. 없으면 저장된 번호(가상 카메라가 아니면). 그것도 아니면 첫 실제 카메라."""
+    """저장된 카메라 이름 → 그 번호. 이름이 저장돼 있는데 목록에 없으면 -1(다른 카메라로 대체하지 않음 →
+    카메라 끊김으로 처리돼 음소거 유지). 이름이 없으면 저장된 번호(가상 카메라가 아니면), 그것도 아니면 첫 실제 카메라."""
     if not names:
         return s.camera_index
-    if s.camera_name and s.camera_name in names and not is_virtual(s.camera_name):
-        return names.index(s.camera_name)
+    if s.camera_name:
+        if s.camera_name in names and not is_virtual(s.camera_name):
+            return names.index(s.camera_name)
+        return -1
     if 0 <= s.camera_index < len(names) and not is_virtual(names[s.camera_index]):
         return s.camera_index
     choices = camera_choices(names)
@@ -44,6 +47,8 @@ def resolve_camera_index(s: Settings, names: list[str]) -> int:
 
 def camera_label(s: Settings, names: list[str]) -> str:
     i = resolve_camera_index(s, names)
+    if i < 0:
+        return f"{s.camera_name} (연결 안 됨)"
     return names[i] if 0 <= i < len(names) else f"카메라 {i}번"
 
 

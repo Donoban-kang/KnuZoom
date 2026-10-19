@@ -42,6 +42,9 @@ class RecordingPanel:
         if self.recorder.recording:
             self.button.config(text="■ 녹화 종료")
             self.status.config(text=f"● 녹화 중 {_hms(self.recorder.elapsed_s)}")
+        elif self.recorder.finalizing:
+            self.button.config(text="● 녹화")
+            self.status.config(text="녹화 파일 마무리 중…")
         else:
             self.button.config(text="● 녹화")
             self.status.config(text="")

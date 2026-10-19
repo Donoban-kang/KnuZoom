@@ -35,12 +35,14 @@ def make_file_log(base_dir):
 
 def make_recorder(s, engine, pipeline, log, log_dir: Path) -> Recorder:
     app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else None
-    try:
+
+    def overlay_factory(site_name):  # 녹화 시작 때 '지금' 기관 이름으로 그린다. 실패하면 녹화 시작 거부
         from knuzoom.recording.overlay import RecordingOverlay
-        overlay = RecordingOverlay(s.site_name).apply
-    except Exception as exc:  # 표시를 못 만들면 녹화 시작이 거부된다
-        log(f"{datetime.now():%H:%M:%S} 녹화 표시 생성 실패: {exc!r}")
-        overlay = None
+        return RecordingOverlay(site_name).apply
+
+    def overlay_alive():  # 최근 5초 안에 가상 카메라로 영상을 보냈는지(= 다른 기관이 표시를 볼 수 있는지)
+        sent = pipeline.last_sent_at
+        return sent is not None and time.monotonic() - sent < 5.0
 
     def spawn(cmd):
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +60,7 @@ def make_recorder(s, engine, pipeline, log, log_dir: Path) -> Recorder:
         gate_open=engine.mic_gate_open,
         meeting_active=lambda: engine.meeting_present() is not False,
         set_filter=lambda f: setattr(pipeline, "frame_filter", f),
-        log=log, overlay=overlay)
+        log=log, overlay_factory=overlay_factory, overlay_alive=overlay_alive)
     pipeline.on_filter_error = recorder.on_overlay_error
     return recorder
 
@@ -87,12 +89,17 @@ def main() -> None:
     mic = MicController(WindowsZoomAdapter(s), s.verify_delay_s)
     engine = Engine(s, mic, log, clock_hms=lambda: f"{datetime.now():%H:%M:%S}", run=run)
 
-    from knuzoom.camera_select import list_camera_names, resolve_camera_index
-    s.camera_index = resolve_camera_index(s, list_camera_names())  # 저장된 카메라 이름으로 번호를 다시 찾음
+    from knuzoom.camera_select import CameraControl
+    camera = CameraControl(s, settings_path, reopen=lambda: None, camera_changed=engine.camera_changed)
+
+    def open_capture():  # 다시 연결할 때마다 장치 목록을 새로 보고, 저장된 '우리 카메라 이름'으로 번호를 찾는다
+        camera.refresh()
+        return open_real_capture(s, camera.current_index())
+
     analyzer = FaceAnalyzer(s.min_face_confidence)
     pipeline = CameraPipeline(
         s,
-        open_capture=lambda: open_real_capture(s),
+        open_capture=open_capture,
         open_vcam=lambda: open_real_vcam(s),
         analyze=analyzer.analyze,
         on_stats=engine.on_stats,
@@ -104,8 +111,7 @@ def main() -> None:
     cam_thread = threading.Thread(target=pipeline.run, args=(stop,), daemon=True, name="knuzoom-cam")
 
     recorder = make_recorder(s, engine, pipeline, log, settings_path.parent / "logs")
-    from knuzoom.camera_select import CameraControl
-    camera = CameraControl(s, settings_path, reopen=pipeline.reopen, camera_changed=engine.camera_changed)
+    camera.reopen = pipeline.reopen
     window = ControlWindow(engine, s, settings_path, on_quit=stop.set, recorder=recorder,
                            camera=camera, last_frame=lambda: pipeline.last_frame)
     if not register_emergency_hotkey(s.emergency_hotkey, engine):
@@ -121,13 +127,14 @@ def main() -> None:
         window.run()
     finally:
         try:
-            recorder.stop("프로그램 종료")  # 녹화 파일을 먼저 마무리(동의 기록·해시)
+            recorder.stop("프로그램 종료")  # 표시를 끄고 마무리는 백그라운드로(오래 걸려도 아래 음소거를 막지 않음)
         except Exception as exc:
             log(f"{datetime.now():%H:%M:%S} 녹화 종료 오류: {exc!r}")
         stop.set()
         cam_thread.join(timeout=3)
         worker.shutdown(wait=True, cancel_futures=True)  # 진행 중인 제어만 끝내고 대기 요청은 버림
         engine.shutdown()                                # 종료 시 항상 음소거
+        recorder.wait_finalized(30)                      # 녹화 파일·동의 기록(해시) 마무리 대기
         pipeline.close()
         analyzer.close()
         if tray is not None:
