@@ -4,7 +4,7 @@ name: Windows 설치 파일 빌드
 
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]  # 작업 브랜치에서도 Windows 시험·빌드를 미리 확인
   pull_request:
   workflow_dispatch:
 
