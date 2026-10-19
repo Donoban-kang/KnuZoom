@@ -26,6 +26,31 @@ jobs:
       - name: 시험
         run: pytest -q
 
+      - name: FFmpeg(LGPL 빌드) 내려받기
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip"
+          Invoke-WebRequest $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_dl
+          $root = Get-ChildItem ffmpeg_dl -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force third_party\ffmpeg | Out-Null
+          Copy-Item "$($root.FullName)\bin\ffmpeg.exe", "$($root.FullName)\bin\ffprobe.exe" third_party\ffmpeg\
+          Copy-Item "$($root.FullName)\LICENSE.txt" third_party\ffmpeg\LICENSE.txt
+          third_party\ffmpeg\ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          $enc = third_party\ffmpeg\ffmpeg.exe -hide_banner -encoders | Select-String "h264_mf"
+          if (-not $enc) { Write-Error "이 FFmpeg 빌드에 h264_mf 인코더가 없음"; exit 1 }
+          Write-Host $enc
+
+      - name: 녹화 시험(시험 영상 + 사인파 5초 → mp4)
+        run: python scripts/record_smoke.py third_party\ffmpeg\ffmpeg.exe
+
+      - name: 화면 캡처(ddagrab) 시험 — 결과만 기록
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          third_party\ffmpeg\ffmpeg.exe -hide_banner -y -f lavfi -i "ddagrab=output_idx=0:framerate=10:draw_mouse=0" -t 3 -vf "hwdownload,format=bgra,format=nv12" -c:v h264_mf ddagrab_test.mp4
+          third_party\ffmpeg\ffprobe.exe -v error -show_entries format=duration -of default=nw=1:nk=1 ddagrab_test.mp4
+
       - name: 버전 읽기
         id: version
         shell: python
