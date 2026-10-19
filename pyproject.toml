@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-windows = ["pywinauto", "keyboard", "pystray", "soundcard"]
+windows = ["pywinauto", "keyboard", "pystray", "soundcard", "pygrabber"]
 dev = ["pytest", "pyinstaller"]
 
 [tool.setuptools.packages.find]

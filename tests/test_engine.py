@@ -303,3 +303,13 @@ def test_meeting_present_tracks_last_known_state():
     assert e.meeting_present() is False
     z.active = True; e.clock.t += 1.0; e.tick()
     assert e.meeting_present() is True
+
+
+def test_camera_changed_mutes_and_requires_new_history():
+    z = FakeZoom(muted=True); e, log = make_engine_with_log(z)
+    zoom_for(e, 1.2, t0=0.0)
+    assert z.muted is False
+    e.camera_changed()
+    assert z.muted is True and log[-1] == "10:00:00 ZOOM→카메라변경 음소거 성공"
+    e.on_stats(1.4, FaceStats(1, 0.3))
+    assert z.muted is True                     # 새 카메라 이력이 1초 쌓이기 전에는 해제하지 않음

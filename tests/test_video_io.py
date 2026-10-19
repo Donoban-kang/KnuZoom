@@ -192,3 +192,16 @@ def test_frame_filter_error_goes_to_filter_handler_not_engine():
     p.on_filter_error = filt_errors.append
     p.step()
     assert errors == [] and len(filt_errors) == 1
+
+
+def test_reopen_switches_camera_and_keeps_last_frame():
+    opened = []
+    caps = [FakeCapture([FRAME] * 5), FakeCapture([FRAME + 7] * 5)]
+    p = CameraPipeline(Settings(), open_capture=lambda: (opened.append(1), caps[len(opened) - 1])[1],
+                       open_vcam=FakeVCam, analyze=lambda f: FaceStats(1, 0.3), on_stats=lambda t, s: None,
+                       on_lost=lambda t: None, on_error=lambda e: None)
+    p.step()
+    assert p.last_frame is not None and p.last_frame.max() == 0
+    p.reopen()
+    p.step()
+    assert len(opened) == 2 and caps[0].released and p.last_frame.max() == 7

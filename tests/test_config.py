@@ -109,3 +109,9 @@ def test_retention_days_out_of_range():
     from knuzoom.config import sanitize_settings
     s, problems = sanitize_settings(Settings(retention_days=0))
     assert s.retention_days == 30 and "retention_days" in problems
+
+
+def test_camera_name_default_empty_allowed():
+    from knuzoom.config import sanitize_settings
+    assert Settings().camera_name == ""
+    assert sanitize_settings(Settings(camera_name=""))[1] == []

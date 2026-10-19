@@ -68,6 +68,7 @@ def main() -> None:
         show_already_running()
         return
     settings_path = default_settings_path()
+    first_run = not settings_path.exists()
     s, problems = load_settings_with_problems(settings_path)
     log = make_file_log(settings_path.parent)
     if problems:
@@ -86,6 +87,8 @@ def main() -> None:
     mic = MicController(WindowsZoomAdapter(s), s.verify_delay_s)
     engine = Engine(s, mic, log, clock_hms=lambda: f"{datetime.now():%H:%M:%S}", run=run)
 
+    from knuzoom.camera_select import list_camera_names, resolve_camera_index
+    s.camera_index = resolve_camera_index(s, list_camera_names())  # 저장된 카메라 이름으로 번호를 다시 찾음
     analyzer = FaceAnalyzer(s.min_face_confidence)
     pipeline = CameraPipeline(
         s,
@@ -101,7 +104,10 @@ def main() -> None:
     cam_thread = threading.Thread(target=pipeline.run, args=(stop,), daemon=True, name="knuzoom-cam")
 
     recorder = make_recorder(s, engine, pipeline, log, settings_path.parent / "logs")
-    window = ControlWindow(engine, s, settings_path, on_quit=stop.set, recorder=recorder)
+    from knuzoom.camera_select import CameraControl
+    camera = CameraControl(s, settings_path, reopen=pipeline.reopen, camera_changed=engine.camera_changed)
+    window = ControlWindow(engine, s, settings_path, on_quit=stop.set, recorder=recorder,
+                           camera=camera, last_frame=lambda: pipeline.last_frame)
     if not register_emergency_hotkey(s.emergency_hotkey, engine):
         log(f"{datetime.now():%H:%M:%S} 긴급 정지 단축키 등록 실패: {s.emergency_hotkey}")
     tray = start_tray(window)
@@ -109,6 +115,8 @@ def main() -> None:
     cam_thread.start()
     from knuzoom.ui_recording import ask_delete_expired
     window.root.after(1000, lambda: ask_delete_expired(window.root, s))
+    if first_run:  # 처음 실행: 우리 기관 이름과 우리 캠퍼스 카메라를 고른다
+        window.root.after(500, lambda: window.open_camera_dialog(first_run=True))
     try:
         window.run()
     finally:

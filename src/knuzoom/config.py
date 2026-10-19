@@ -10,6 +10,7 @@ from pathlib import Path
 @dataclass
 class Settings:
     camera_index: int = 0
+    camera_name: str = ""  # 우리 캠퍼스 판정 카메라 이름(번호가 바뀌어도 이름으로 찾음)
     width: int = 1280
     height: int = 720
     fps: int = 30
@@ -90,7 +91,7 @@ _RANGES: dict[str, tuple[float, float, bool]] = {
 }
 
 # 빈 문자열을 허용하는 문자열 항목
-_OPTIONAL_STR = {"recording_dir"}
+_OPTIONAL_STR = {"recording_dir", "camera_name"}
 
 
 def _valid(name: str, value: object, default: object) -> bool:

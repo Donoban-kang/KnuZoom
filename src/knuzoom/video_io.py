@@ -69,10 +69,23 @@ class CameraPipeline:
         self.frame_filter: Callable[[np.ndarray], np.ndarray] | None = None
         # 필터 오류를 받을 곳. 녹화 쪽에서 지정한다(엔진의 오류 처리로 보내지 않기 위해). 없으면 on_error.
         self.on_filter_error: Callable[[Exception], None] | None = None
+        self.last_frame: np.ndarray | None = None  # 카메라 선택 화면 미리보기용(가장 최근 원본 프레임)
+        self._reopen = threading.Event()
+
+    def reopen(self) -> None:
+        """다른 카메라로 바꿀 때: 다음 프레임에서 지금 카메라를 닫고 open_capture로 다시 연다(다른 스레드에서 호출 가능)."""
+        self._reopen.set()
 
     def step(self) -> None:
         """프레임 1장을 처리한다."""
         t = self.clock()
+        if self._reopen.is_set():
+            self._reopen.clear()
+            if self._cap is not None:
+                self._cap.release()
+                self._cap = None
+            self._lost = False
+            self._fails = 0
         if self._cap is None:
             if self._lost and t - self._lost_at < RECONNECT_INTERVAL_S:
                 return
@@ -99,6 +112,7 @@ class CameraPipeline:
             return
         self._fails = 0
         self._lost = False
+        self.last_frame = frame
         self._send(t, frame)
         period = 1.0 / self.s.analysis_fps
         if self._last_analysis is None or t - self._last_analysis >= period - 1e-6:

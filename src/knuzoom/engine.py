@@ -208,6 +208,14 @@ class Engine:
             if not self._camera_lost:
                 self._lose_camera()
 
+    def camera_changed(self) -> None:
+        """판정 카메라를 바꿨을 때: 이전 카메라 이력을 버리고 음소거한 뒤 새 영상으로 다시 판정한다."""
+        with self._lock:
+            prev = self.stab.state
+            self.stab.reset(self.clock())
+            self._muted = True
+            self._request(True, f"{prev.value}→카메라변경")
+
     def on_error(self, exc: Exception) -> None:
         now = self.clock()
         with self._lock:
