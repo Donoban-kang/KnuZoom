@@ -80,9 +80,15 @@ class ConsentDialog:
         row("동의 받은 기관", 1)
         box = tk.Frame(win)
         box.grid(row=1, column=1, sticky="w", padx=8)
-        self.parties = {p: tk.BooleanVar(value=False) for p in s.consent_parties}
-        for p, var in self.parties.items():
-            tk.Checkbutton(box, text=p, variable=var, command=self._refresh).pack(side="left")
+        self.party_box = box
+        self.parties: dict[str, tk.BooleanVar] = {}
+        for p in s.consent_parties:
+            self._add_party_checkbox(p)
+        addrow = tk.Frame(win)
+        addrow.grid(row=1, column=2, sticky="w", padx=(0, 8))
+        self.new_party = tk.StringVar()
+        tk.Entry(addrow, textvariable=self.new_party, width=10).pack(side="left")
+        tk.Button(addrow, text="기관 추가", command=self._add_party).pack(side="left", padx=2)
 
         row("동의 방법", 2)
         mbox = tk.Frame(win)
@@ -111,6 +117,19 @@ class ConsentDialog:
             var.trace_add("write", lambda *_: self._refresh())
         self._refresh()
 
+    def _add_party_checkbox(self, name: str) -> None:
+        var = tk.BooleanVar(value=False)
+        self.parties[name] = var
+        tk.Checkbutton(self.party_box, text=name, variable=var, command=self._refresh).pack(side="left")
+
+    def _add_party(self) -> None:
+        """회의에 늦게 들어온 기관: 이번 녹화의 동의 대상에 추가(체크해야 시작 가능)."""
+        name = self.new_party.get().strip()
+        if name and name not in self.parties:
+            self._add_party_checkbox(name)
+        self.new_party.set("")
+        self._refresh()
+
     def record(self) -> ConsentRecord:
         try:
             days = int(self.retention.get())
@@ -118,7 +137,7 @@ class ConsentDialog:
             days = 0
         return ConsentRecord(
             meeting=self.meeting.get(), site_name=self.s.site_name,
-            required_parties=list(self.s.consent_parties),
+            required_parties=list(self.parties),
             agreed_parties=[p for p, v in self.parties.items() if v.get()],
             method=self.method.get(), method_other=self.method_other.get(),
             purpose=self.purpose.get(), retention_days=days)

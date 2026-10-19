@@ -1,6 +1,7 @@
 """우리 캠퍼스 판정 카메라 선택 창(첫 실행 시 기관 이름도 함께 받음)."""
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from typing import Callable
@@ -65,7 +66,10 @@ class CameraDialog:
         tk.Button(btns, text="미리보기", command=self._preview).pack(side="left", padx=2)
         tk.Button(btns, text="이 카메라 사용", command=self._use).pack(side="left", padx=2)
         self.listbox.bind("<<ListboxSelect>>", lambda _e: self._preview())
+        if first_run:  # 처음 설정은 끝내야 한다(기관 이름이 녹화 표시·동의 기록에 쓰임)
+            win.protocol("WM_DELETE_WINDOW", self._refuse_close)
         self._photo = None
+        self._preview_seq = 0
         self.choices: list[tuple[int, str]] = []
         self._load()
 
@@ -91,7 +95,31 @@ class CameraDialog:
         if choice is None:
             return
         idx, _ = choice
-        frame = self.last_frame() if idx == self.ctl.current_index() else grab_preview(idx)
+        if idx == self.ctl.current_index():
+            self._show_frame(self.last_frame())
+            return
+        # 사용 중이 아닌 카메라는 여는 데 몇 초 걸릴 수 있어 백그라운드에서 읽는다(진행자 창이 멈추지 않게)
+        self._preview_seq += 1
+        seq = self._preview_seq
+        self.preview.config(image="", text="미리보기 불러오는 중…")
+        result: dict = {}
+
+        def work():
+            result["frame"] = grab_preview(idx)
+
+        t = threading.Thread(target=work, daemon=True)
+        t.start()
+        self._wait_preview(t, result, seq)
+
+    def _wait_preview(self, t: threading.Thread, result: dict, seq: int) -> None:
+        if not self.win.winfo_exists() or seq != self._preview_seq:
+            return  # 창이 닫혔거나 다른 카메라를 다시 고름
+        if t.is_alive():
+            self.win.after(100, lambda: self._wait_preview(t, result, seq))
+            return
+        self._show_frame(result.get("frame"))
+
+    def _show_frame(self, frame) -> None:
         if frame is None:
             self.preview.config(image="", text="미리보기를 가져올 수 없습니다")
             return
@@ -100,6 +128,10 @@ class CameraDialog:
         img = Image.fromarray(np.ascontiguousarray(rgb)).resize((PREVIEW_W, PREVIEW_H))
         self._photo = ImageTk.PhotoImage(img)
         self.preview.config(image=self._photo, text="", width=PREVIEW_W, height=PREVIEW_H)
+
+    def _refuse_close(self) -> None:
+        messagebox.showinfo("처음 설정", "우리 기관 이름을 입력하고 [이 카메라 사용]을 눌러 처음 설정을 마쳐 주세요.\n"
+                            "(카메라가 아직 없으면 목록에서 고르지 않고 눌러도 됩니다)", parent=self.win)
 
     def _use(self) -> None:
         choice = self._selected()

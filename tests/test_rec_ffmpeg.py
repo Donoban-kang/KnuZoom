@@ -24,3 +24,24 @@ def test_find_ffmpeg_prefers_bundled(tmp_path):
     exe.parent.mkdir()
     exe.write_bytes(b"")
     assert find_ffmpeg(tmp_path) == str(exe)
+
+
+def test_screen_audio_uses_wallclock_timestamps():  # 경미 4
+    cmd = build_command("ffmpeg", Path("o.mp4"), monitor=0, fps=30)
+    i = cmd.index("pipe:0")
+    assert "-use_wallclock_as_timestamps" in cmd[:i] and cmd.index("-use_wallclock_as_timestamps") > cmd.index("ddagrab=output_idx=0:framerate=30:draw_mouse=0")
+
+
+def test_test_source_does_not_use_wallclock():
+    assert "-use_wallclock_as_timestamps" not in build_command("ffmpeg", Path("o.mp4"), 0, 30, source="test")
+
+
+def test_spawn_writes_stderr_to_log_and_closes_handle(tmp_path):  # 경미 1
+    import sys
+    from knuzoom.recording.ffmpeg_cmd import make_spawn
+    spawn = make_spawn(tmp_path / "logs")
+    proc = spawn([sys.executable, "-c", "import sys; sys.stdin.read(); sys.stderr.write('warn')"])
+    proc.stdin.close()
+    proc.wait(10)
+    assert (tmp_path / "logs" / "ffmpeg.log").read_text() == "warn"
+    assert spawn.open_handles() == 0

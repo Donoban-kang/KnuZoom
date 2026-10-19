@@ -70,3 +70,28 @@ def test_sha256(tmp_path):
 
 def test_free_gb_for_missing_dir(tmp_path):
     assert free_gb(tmp_path / "없음" / "더없음") > 0
+
+
+def test_filename_strips_control_characters():  # 경미 5
+    assert safe_filename("회의\t1\n차\x00", T) == "20261019_1400_회의1차.mp4"
+
+
+def test_finalize_orphans_marks_unfinished_records(tmp_path):  # 경미 3
+    from knuzoom.recording.storage import finalize_orphans
+    (tmp_path / "a.mp4").write_bytes(b"abc")
+    (tmp_path / "a.txt").write_text("녹화 종료: (녹화 중)\nSHA-256: (종료 시 계산)\n", encoding="utf-8")
+    (tmp_path / "b.mp4").write_bytes(b"x")
+    (tmp_path / "b.txt").write_text("녹화 종료: 2026-10-19 15:00:00\nSHA-256: 1234\n", encoding="utf-8")
+    fixed = finalize_orphans(tmp_path, datetime(2026, 10, 20, 9, 0, 0))
+    assert fixed == [tmp_path / "a.mp4"]
+    t = (tmp_path / "a.txt").read_text(encoding="utf-8")
+    assert "녹화 종료: (비정상 종료 — 2026-10-20 09:00:00 다음 실행 때 확인)" in t
+    assert "SHA-256: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" in t
+    assert "SHA-256: 1234" in (tmp_path / "b.txt").read_text(encoding="utf-8")
+
+
+def test_finalize_orphans_skips_active_path(tmp_path):
+    from knuzoom.recording.storage import finalize_orphans
+    (tmp_path / "a.mp4").write_bytes(b"abc")
+    (tmp_path / "a.txt").write_text("SHA-256: (종료 시 계산)\n", encoding="utf-8")
+    assert finalize_orphans(tmp_path, datetime(2026, 10, 20), skip=tmp_path / "a.mp4") == []

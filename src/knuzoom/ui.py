@@ -40,6 +40,8 @@ class ControlWindow:
         self.on_quit = on_quit
         self._calibrating = False
         self.calls = MainThreadCalls()  # 트레이 등 다른 스레드의 화면 작업 요청
+        self.tray = None
+        self._tray_recording: bool | None = None
         self._closed = False
 
         self.root = tk.Tk()
@@ -101,6 +103,7 @@ class ControlWindow:
                              relief="raised" if st.auto else "sunken")
         if self.recording is not None:
             self.recording.poll()
+            self._update_tray(self.recording.recorder.recording)
         if self._calibrating and not self.engine.calibration_running():
             self._calibrating = False
             save_settings(self.s, self.path)
@@ -117,6 +120,19 @@ class ControlWindow:
         if not self.engine.sync_mic(muted, token):
             messagebox.showinfo("상태 맞추기", "확인하시는 동안 KnuZoom이 마이크를 조작했습니다.\n"
                                 "Zoom 마이크 상태를 다시 보고 한 번 더 맞춰 주세요.", parent=self.root)
+
+    def _update_tray(self, recording: bool) -> None:
+        """녹화 중이면 트레이 아이콘을 빨간색·'● 녹화 중' 제목으로 바꾼다(바뀔 때만)."""
+        if self.tray is None or recording == self._tray_recording:
+            return
+        self._tray_recording = recording
+        try:
+            from knuzoom.tray_state import tray_appearance
+            color, title = tray_appearance(recording)
+            self.tray.icon = tray_image(color)
+            self.tray.title = title
+        except Exception:
+            pass
 
     def open_camera_dialog(self, first_run: bool = False) -> None:
         from knuzoom.ui_camera import CameraDialog
@@ -193,6 +209,13 @@ class ControlWindow:
         self.root.mainloop()
 
 
+def tray_image(color: str):
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (64, 64), "white")
+    ImageDraw.Draw(img).ellipse((8, 8, 56, 56), fill=color)
+    return img
+
+
 def start_tray(window: ControlWindow):
     """트레이 아이콘(열기/종료). pystray가 없으면 None."""
     try:
@@ -200,9 +223,7 @@ def start_tray(window: ControlWindow):
         from PIL import Image, ImageDraw
     except ImportError:
         return None
-    img = Image.new("RGB", (64, 64), "white")
-    ImageDraw.Draw(img).ellipse((8, 8, 56, 56), fill=GREEN)
-    icon = pystray.Icon("KnuZoom", img, "KnuZoom", menu=pystray.Menu(
+    icon = pystray.Icon("KnuZoom", tray_image(GREEN), "KnuZoom", menu=pystray.Menu(
         pystray.MenuItem("열기", lambda: window.show(), default=True),
         pystray.MenuItem("종료", lambda: (icon.stop(), window.on_quit(), window.quit())),
     ))
