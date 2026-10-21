@@ -13,7 +13,7 @@ def test_main_module_imports_without_com_mode_conflict():
     # 다른 모듈이 COM을 먼저 STA로 초기화하면 pywinauto(comtypes)가
     # "스레드 모드가 설정된 후에는 바꿀 수 없습니다"로 실패해 프로그램이 켜지지 않는다.
     r = subprocess.run([sys.executable, "-c", "import knuzoom.__main__"],
-                       cwd=SRC, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                       cwd=SRC, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     assert r.returncode == 0, r.stderr
 
 
@@ -26,6 +26,7 @@ from knuzoom.config import Settings
 from knuzoom.zoom_windows import WindowsZoomAdapter
 a = WindowsZoomAdapter(Settings())
 a._meeting_window()  # 주 스레드(종료 시 음소거)
+a.read_muted()
 errs = []
 def work():  # 작업 스레드(마이크 제어·회의 확인)
     try:
@@ -41,5 +42,5 @@ assert not errs, errs
 @pytest.mark.skipif(sys.platform != "win32", reason="COM 초기화는 Windows에서만 확인")
 def test_starts_and_reads_zoom_when_com_already_sta():
     r = subprocess.run([sys.executable, "-c", _FROZEN_LIKE],
-                       cwd=SRC, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                       cwd=SRC, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     assert r.returncode == 0, r.stderr
