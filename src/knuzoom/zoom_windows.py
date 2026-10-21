@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import ctypes
+from concurrent.futures import ThreadPoolExecutor
 from ctypes import wintypes
-
-from pywinauto import Desktop
-from pywinauto.keyboard import send_keys
 
 from knuzoom.config import Settings
 from knuzoom.zoom_labels import is_zoom_exe, mute_state_from_labels
@@ -21,6 +19,24 @@ _k32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, win
                                              ctypes.POINTER(wintypes.DWORD))
 _k32.CloseHandle.restype = wintypes.BOOL
 _k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+# 실행파일(PyInstaller)은 우리 코드보다 먼저 주 스레드의 COM을 STA로 초기화해 둔다. 주 스레드에서
+# pywinauto를 불러오면 MTA로 바꾸려다 "스레드 모드가 설정된 후에는 바꿀 수 없습니다"로 실패하고,
+# STA 객체를 다른 스레드에서 쓰면 주 스레드가 기다리는 동안 서로 멈출 수 있다.
+# 그래서 UI Automation은 전용 스레드(MTA) 하나에서만 불러오고 실행한다.
+_ole32 = ctypes.WinDLL("ole32")
+
+
+def _init_uia_thread() -> None:
+    _ole32.CoInitializeEx(None, 0)  # COINIT_MULTITHREADED
+
+
+_uia = ThreadPoolExecutor(max_workers=1, thread_name_prefix="knuzoom-uia", initializer=_init_uia_thread)
+
+
+def _on_uia_thread(fn):
+    """fn을 UI Automation 전용 스레드에서 실행하고 결과를 돌려준다(예외도 그대로 전달)."""
+    return _uia.submit(fn).result()
 
 
 def _exe_path(pid: int) -> str | None:
@@ -44,6 +60,10 @@ class WindowsZoomAdapter:
         self.s = s
 
     def _meeting_window(self):
+        return _on_uia_thread(self._find_meeting_window)
+
+    def _find_meeting_window(self):
+        from pywinauto import Desktop  # 전용 스레드에서 처음 불러오도록 여기서 불러온다
         for w in Desktop(backend="uia").windows():
             try:
                 title = w.window_text()
@@ -65,11 +85,13 @@ class WindowsZoomAdapter:
             return False
 
     def read_muted(self) -> bool | None:
+        def labels():
+            w = self._find_meeting_window()
+            return None if w is None else [b.window_text() for b in w.descendants(control_type="Button")]
         try:
-            w = self._meeting_window()
-            if w is None:
+            names = _on_uia_thread(labels)
+            if names is None:
                 return None
-            names = [b.window_text() for b in w.descendants(control_type="Button")]
         except Exception:
             return None
         return mute_state_from_labels(names, self.s.zoom_label_when_muted,
@@ -78,4 +100,7 @@ class WindowsZoomAdapter:
     def press_toggle(self) -> None:
         # Zoom 설정에서 Alt+A "전역 단축키"를 켜 두어야 Zoom 창이 앞에 없어도 동작한다.
         # 긴급 정지(Ctrl+Alt+K) 직후 Ctrl·Shift·Win이 눌린 채로 남아 있으면 Zoom이 Alt+A로 인식하지 못하므로 먼저 뗀다.
-        send_keys("{VK_CONTROL up}{VK_SHIFT up}{VK_LWIN up}{VK_RWIN up}%a")
+        def press():
+            from pywinauto.keyboard import send_keys
+            send_keys("{VK_CONTROL up}{VK_SHIFT up}{VK_LWIN up}{VK_RWIN up}%a")
+        _on_uia_thread(press)

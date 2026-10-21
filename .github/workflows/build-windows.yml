@@ -68,10 +68,16 @@ jobs:
           $p = Start-Process -FilePath "dist\KnuZoom\KnuZoom.exe" -PassThru
           Start-Sleep -Seconds 20
           if ($p.HasExited) { Write-Error "KnuZoom.exe가 시작 직후 종료됨(종료 코드 $($p.ExitCode))"; exit 1 }
-          Write-Host "KnuZoom.exe 실행 유지 확인(PID $($p.Id))"
+          $p.Refresh()
+          $title = $p.MainWindowTitle
+          Write-Host "KnuZoom.exe 실행 유지 확인(PID $($p.Id), 창 제목 '$title')"
           Stop-Process -Id $p.Id -Force
           $log = Join-Path $env:APPDATA "KnuZoom\logs"
           if (Test-Path $log) { Get-ChildItem $log | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName } }
+          # 오류 창이 떠 있어도 프로세스는 살아 있으므로, 시작 기록이 남았는지로 정상 시작을 확인한다
+          if ($title -like "*Unhandled exception*") { Write-Error "KnuZoom.exe 시작 중 오류 창이 떴음"; exit 1 }
+          $started = (Test-Path $log) -and (Get-ChildItem $log | Select-String -SimpleMatch "KnuZoom 시작" -Quiet)
+          if (-not $started) { Write-Error "KnuZoom.exe가 정상 시작 기록을 남기지 않음"; exit 1 }
 
       - name: Inno Setup 설치
         run: choco install innosetup -y --no-progress
