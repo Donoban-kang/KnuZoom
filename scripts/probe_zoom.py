@@ -3,7 +3,13 @@
 음소거 상태와 해제 상태에서 각각 실행해, 마이크 버튼 이름을 settings.json의
 zoom_label_when_muted / zoom_label_when_unmuted 에 반영한다.
 """
-from pywinauto import Desktop
+import sys
+
+# 실행파일은 시작 전에 COM을 STA로 초기화해 두므로 pywinauto도 STA로 맞춘다(knuzoom/zoom_windows.py 참고)
+if not hasattr(sys, "coinit_flags"):
+    sys.coinit_flags = 2
+
+from pywinauto import Desktop  # noqa: E402
 
 
 def main() -> None:

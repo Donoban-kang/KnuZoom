@@ -1,17 +1,5 @@
 """KnuZoom 실행: 설정 → Zoom 어댑터·제어기·엔진 → 카메라 스레드 → 진행자 창."""
 from __future__ import annotations
-import os as _os, sys as _sys
-_TRACE = []
-def _apt(tag):
-    if _sys.platform != "win32":
-        return
-    import ctypes
-    t = ctypes.c_int(-1); q = ctypes.c_int(-1)
-    hr = ctypes.windll.ole32.CoGetApartmentType(ctypes.byref(t), ctypes.byref(q))
-    _TRACE.append(f"{tag}: hr={hr & 0xFFFFFFFF:#x} type={t.value} qual={q.value}")
-    with open(_os.path.join(_os.environ.get("TEMP", "."), "knuzoom_com_trace.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(_TRACE))
-_apt("start")
 
 import sys
 import threading
@@ -21,23 +9,14 @@ from datetime import datetime
 from pathlib import Path
 
 from knuzoom.config import default_settings_path, load_settings_with_problems
-_apt("after knuzoom.config")
 from knuzoom.engine import Engine
-_apt("after knuzoom.engine")
 from knuzoom.faces import FaceAnalyzer
-_apt("after knuzoom.faces")
 from knuzoom.mic import MicController
-_apt("after knuzoom.mic")
 from knuzoom.recording.ffmpeg_cmd import find_ffmpeg, make_spawn
-_apt("after knuzoom.recording.ffmpeg_cmd")
 from knuzoom.recording.recorder import Recorder
-_apt("after knuzoom.recording.recorder")
 from knuzoom.single_instance import acquire, show_already_running
-_apt("after knuzoom.single_instance")
 from knuzoom.ui import ControlWindow, register_emergency_hotkey, start_tray
-_apt("after knuzoom.ui")
 from knuzoom.video_io import CameraPipeline, open_real_capture, open_real_vcam
-_apt("after knuzoom.video_io")
 from knuzoom.zoom_windows import WindowsZoomAdapter
 
 

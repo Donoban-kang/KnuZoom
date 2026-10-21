@@ -72,8 +72,6 @@ jobs:
           $title = $p.MainWindowTitle
           Write-Host "KnuZoom.exe 실행 유지 확인(PID $($p.Id), 창 제목 '$title')"
           Stop-Process -Id $p.Id -Force
-          $tr = Join-Path $env:TEMP "knuzoom_com_trace.txt"
-          if (Test-Path $tr) { Write-Host "--- COM 추적"; Get-Content $tr }
           $log = Join-Path $env:APPDATA "KnuZoom\logs"
           if (Test-Path $log) { Get-ChildItem $log | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName } }
           # 오류 창이 떠 있어도 프로세스는 살아 있으므로, 시작 기록이 남았는지로 정상 시작을 확인한다

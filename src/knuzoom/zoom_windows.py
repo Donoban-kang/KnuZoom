@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 import ctypes
+import sys
+import threading
 from ctypes import wintypes
 
-from pywinauto import Desktop
-from pywinauto.keyboard import send_keys
+# 실행파일(PyInstaller)은 우리 코드보다 먼저 주 스레드의 COM을 STA로 초기화해 둔다.
+# pywinauto는 지정이 없으면 MTA로 초기화하려다 "스레드 모드가 설정된 후에는 바꿀 수 없습니다"로 실패하므로
+# 주 스레드는 STA로 맞춘다(일반 실행도 같게). 작업 스레드는 _ensure_com()에서 각자 초기화한다.
+if not hasattr(sys, "coinit_flags"):
+    sys.coinit_flags = 2  # COINIT_APARTMENTTHREADED
+
+from pywinauto import Desktop  # noqa: E402
+from pywinauto.keyboard import send_keys  # noqa: E402
 
 from knuzoom.config import Settings
 from knuzoom.zoom_labels import is_zoom_exe, mute_state_from_labels
@@ -21,6 +29,17 @@ _k32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, win
                                              ctypes.POINTER(wintypes.DWORD))
 _k32.CloseHandle.restype = wintypes.BOOL
 _k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+_ole32 = ctypes.WinDLL("ole32")
+_com = threading.local()
+
+
+def _ensure_com() -> None:
+    """이 스레드에서 처음 UI Automation을 쓰기 전에 COM을 초기화한다(스레드마다 한 번)."""
+    if getattr(_com, "ready", False):
+        return
+    _ole32.CoInitializeEx(None, 0)  # MTA. 주 스레드처럼 이미 초기화된 스레드는 실패 코드만 돌려주고 그대로 둔다
+    _com.ready = True
 
 
 def _exe_path(pid: int) -> str | None:
@@ -44,6 +63,7 @@ class WindowsZoomAdapter:
         self.s = s
 
     def _meeting_window(self):
+        _ensure_com()
         for w in Desktop(backend="uia").windows():
             try:
                 title = w.window_text()
