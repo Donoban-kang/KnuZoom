@@ -65,6 +65,7 @@ def main() -> None:
     first_run = not settings_path.exists()
     s, problems = load_settings_with_problems(settings_path)
     log = make_file_log(settings_path.parent)
+    log(f"{datetime.now():%H:%M:%S} KnuZoom 시작")
     if problems:
         log(f"{datetime.now():%H:%M:%S} 설정 기본값 복원: {', '.join(problems)}")
 
