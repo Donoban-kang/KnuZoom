@@ -35,3 +35,17 @@ pytest -q
 - 코드 주석·로그·UI 문구·커밋 메시지는 한국어. 커밋은 `feat:`·`fix:`·`test:`·`docs:`·`build:`·`chore:` 접두어
 - 버전은 `pyproject.toml`의 `version` 한 곳에서 관리한다(CI가 읽어 설치 파일 이름에 쓴다)
 - 얼굴 검출·녹화는 개인정보와 연관된다. 영상·얼굴 데이터를 저장하거나 외부로 보내는 변경은 설계서 「8. 개인정보」와 `recording/consent.py`의 동의 흐름을 먼저 확인한다
+
+## Agent skills
+
+### Issue tracker
+
+이슈·스펙은 GitHub Issues(`Donoban-kang/knuzoom`)에서 관리한다. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+기본 5개 역할 라벨을 그대로 쓴다(`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context: 루트 `GLOSSARY.md` + `docs/adr/`(필요할 때 생성). See `docs/agents/domain.md`.
